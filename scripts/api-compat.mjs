@@ -11,8 +11,11 @@
 //
 // 2. The compatibility check: fetch the baseline's declarations from npm and have tsc
 //    compile a generated file that asks, export by export, whether the old API's uses
-//    still type-check against the new one. A break fails the check unless
-//    packages/tektonic/package.json already bumps the major.
+//    still type-check against the new one. A break fails the check unless CHANGELOG.md
+//    declares it (a "### Breaking" section under "## Unreleased") or
+//    packages/tektonic/package.json already bumps the major. The declaration is how a
+//    breaking PR merges; the release PR, which moves the section under a version, then
+//    passes only if that version is a major.
 //
 // Interfaces and type aliases are checked in both directions: an implementation of the
 // old StatusReporter must satisfy the new one, and a value of the new type must still be
@@ -360,11 +363,43 @@ function compat() {
         console.log(`  allowed: ${cur.version} bumps the major over ${base.version}`);
         return true;
     }
+    if (declaresBreaking()) {
+        console.log(
+            `  allowed: CHANGELOG.md declares a break under "## Unreleased", so the next release ` +
+                `must be a major — a release PR that names it ${major(base.version)}.x fails this check`,
+        );
+        return true;
+    }
+    if (declaresBreaking(cur.version)) {
+        console.log(
+            `  CHANGELOG.md declares a break for ${cur.version}, so this release must be a major: ` +
+                `set the version to ${major(base.version) + 1}.0.0.`,
+        );
+        return false;
+    }
     console.log(
-        `  Bump the major in packages/tektonic/package.json, or make the change additive ` +
-            `(an optional member, a new overload, a new export).`,
+        `  Either make the change additive (an optional member, a new overload, a new export), ` +
+            `or add a "### Breaking" section under "## Unreleased" in CHANGELOG.md that says what ` +
+            `broke and how to migrate.`,
     );
     return false;
+}
+
+/**
+ * Whether CHANGELOG.md's "## Unreleased" section (or the one for `heading`, a version) has
+ * a "### Breaking…" heading. A breaking PR
+ * declares itself there rather than bumping the version, since versions change only at
+ * release. The declaration stays until the release PR moves the section under a version
+ * heading; from then on only a major version bump satisfies the check, so the release
+ * cannot go out as a minor.
+ */
+function declaresBreaking(heading = "Unreleased") {
+    const file = path.join(root, "CHANGELOG.md");
+    if (!fs.existsSync(file)) return false;
+    const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const section = new RegExp(`^## ${escaped}[^\\n]*\\n([\\s\\S]*?)(?=^## |(?![\\s\\S]))`, "m");
+    const m = fs.readFileSync(file, "utf8").match(section);
+    return !!m && /^### Breaking/m.test(m[1]);
 }
 
 // ─── Main ────────────────────────────────────────────────────────────────────

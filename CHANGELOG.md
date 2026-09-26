@@ -21,8 +21,9 @@ against core from npm cannot deep-import it in the first place.
 ### Added: a public API check
 
 `npm run api:check` (self-CI's `check-api` step) fails a change that breaks
-`@tektonic-ci/core`'s public API against the last published release, unless the major is
-bumped, without building any provider. `packages/tektonic/api/` records the API as a
+`@tektonic-ci/core`'s public API against the last published release, unless the break is
+declared under a `### Breaking` heading here, and then holds the release to a new major. It
+does this without building any provider. `packages/tektonic/api/` records the API as a
 reviewed report. See CONTRIBUTING's "Public API changes".
 
 ## 2.1.0

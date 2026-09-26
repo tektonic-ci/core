@@ -115,8 +115,13 @@ instead. It does two things:
   where the old type was. A class must accept its old constructor arguments and keep its
   public members. A function must stay callable the way it was.
 
-A break fails the check unless `packages/tektonic/package.json` already bumps the major. A
-prerelease such as `3.0.0-rc.0` counts. Additive changes pass: a new export, a new
+A break doesn't block the merge; it has to be declared. Add a section under `## Unreleased`
+in `CHANGELOG.md` whose heading starts with `### Breaking`, saying what broke and how to
+migrate. The check then passes and still prints what it found, for the reviewer. Later PRs
+pass on the same declaration until the release. The release PR moves `## Unreleased` under
+a version heading, so from then on only a major version bump satisfies the check. A
+release that should have been a major can't merge as a minor. A prerelease such as
+`3.0.0-rc.0` counts as a major. Additive changes pass: a new export, a new
 **optional** member, or a widened parameter. A new required member on an interface is a
 break, even on one core only ever hands out, because the check cannot tell which interfaces
 someone implements.
@@ -193,7 +198,8 @@ The registry is the channel; the git ref is not, and the README says so.
 ### Cutting a release
 
 1. Bump `version` in `packages/tektonic/package.json`, move the CHANGELOG's "Unreleased"
-   entries under it, then commit and push to `main`.
+   entries under it, then commit and push to `main`. If "Unreleased" has a `### Breaking`
+   section, the version must be a new major, and `check-api` fails the release PR until it is.
 2. `git pull` and tag **the merged commit** on `main` as `vX.Y.Z`, then push the tag. A tag on
    a stale local `main` names the wrong tree, and the workflow's version check is what stops it.
    The workflow refuses to stage when the tag does not match the package version, re-runs
