@@ -32,6 +32,7 @@
 
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
+import zlib from "node:zlib";
 import path from "node:path";
 import { createRequire } from "node:module";
 
@@ -250,25 +251,47 @@ function checksFor(e, ns) {
     return out;
 }
 
-function fetchBaseline() {
+/**
+ * Download and unpack the baseline into .api-compat/baseline/package. Fetched from the
+ * tarball URL rather than with `npm pack`, whose --json output differs between npm
+ * versions, and unpacked in-process, since the CI image carries no tar.
+ */
+async function fetchBaseline() {
     const spec = process.env.API_BASELINE;
     if (spec && fs.existsSync(spec)) return path.resolve(spec);
-    const version = spec || JSON.parse(
-        execFileSync("npm", ["view", `${pkgName}@latest`, "version", "--json"], { encoding: "utf8" }),
-    );
-    const dest = path.join(work, "baseline");
-    fs.mkdirSync(dest, { recursive: true });
-    const [{ filename }] = JSON.parse(
-        execFileSync("npm", ["pack", `${pkgName}@${version}`, "--json", "--pack-destination", dest], {
+    const tarball = JSON.parse(
+        execFileSync("npm", ["view", `${pkgName}@${spec || "latest"}`, "dist.tarball", "--json"], {
             encoding: "utf8",
         }),
     );
-    execFileSync("tar", ["xzf", path.join(dest, filename), "-C", dest]);
+    if (typeof tarball !== "string") throw new Error(`npm view gave no tarball URL: ${JSON.stringify(tarball)}`);
+    const res = await fetch(tarball);
+    if (!res.ok) throw new Error(`fetching ${tarball}: HTTP ${res.status}`);
+    const tar = zlib.gunzipSync(Buffer.from(await res.arrayBuffer()));
+    const dest = path.join(work, "baseline");
+    fs.rmSync(dest, { recursive: true, force: true });
+    // ustar: 512-byte headers, name at 0 (100 bytes), size at 124 (octal), type at 156,
+    // prefix at 345; file data follows, padded to 512.
+    for (let off = 0; off + 512 <= tar.length; ) {
+        const header = tar.subarray(off, off + 512);
+        if (header.every((b) => b === 0)) break;
+        const str = (a, n) => header.subarray(a, a + n).toString("utf8").replace(/\0.*$/s, "");
+        const size = parseInt(str(124, 12).trim() || "0", 8);
+        const name = [str(345, 155), str(0, 100)].filter(Boolean).join("/");
+        const type = String.fromCharCode(header[156] || 48);
+        off += 512;
+        if (type === "0" && !name.split("/").includes("..")) {
+            const file = path.join(dest, name);
+            fs.mkdirSync(path.dirname(file), { recursive: true });
+            fs.writeFileSync(file, tar.subarray(off, off + size));
+        }
+        off += Math.ceil(size / 512) * 512;
+    }
     return path.join(dest, "package");
 }
 
-function compat() {
-    const baseDir = fetchBaseline();
+async function compat() {
+    const baseDir = await fetchBaseline();
     const base = entries(baseDir);
     const cur = entries(pkgDir);
     const major = (v) => Number(v.split(".")[0]);
@@ -419,5 +442,5 @@ for (const [sub, file] of Object.entries(cur.entries)) {
         ok = false;
     }
 }
-if (mode === "check") ok = compat() && ok;
+if (mode === "check") ok = (await compat()) && ok;
 process.exit(ok ? 0 : 1);
