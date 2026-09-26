@@ -130,8 +130,13 @@ Private and protected class members are not API and are ignored. So are the valu
 constants: an image pin changing is a behaviour change, not a type break.
 `API_BASELINE=<version>` compares against a version other than `latest`.
 
-The script uses TypeScript 5 under the alias `typescript-api`, because TypeScript 7 ships
-without the compiler API. Renovate holds the alias below 6.
+The script needs the TypeScript compiler API to read the declarations, and TypeScript 7
+offers it only as `typescript/unstable/*`. So the script downloads TypeScript 5 into its
+gitignored work dir, `packages/tektonic/.api-compat/`. The project's own TypeScript 7
+still judges compatibility. TypeScript 5 is not a devDependency because every
+`typescript` package ships a `tsc` bin, and a second copy made install order decide which
+compiler `npm run build` used. If the check itself fails to compile, it fails outright,
+whatever the CHANGELOG declares.
 
 ## Dependency updates
 

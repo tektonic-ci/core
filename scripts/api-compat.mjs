@@ -26,9 +26,12 @@
 // Usage: node scripts/api-compat.mjs check|update
 //   API_BASELINE=<version or directory>  compare against this instead of npm's `latest`
 //
-// typescript-api is TypeScript 5 under an alias: TS 7 ships only the native compiler,
-// without the JS API, and this script needs the API to enumerate exports. tsc 7 remains
-// the judge of the generated file.
+// Enumerating exports needs the TypeScript compiler API, which TypeScript 7 ships only as
+// `typescript/unstable/*`. So the script downloads TypeScript 5 into its work dir and uses
+// it for reading declarations, never for judging them: the project's own tsc 7 compiles
+// the generated file. TS 5 is deliberately not a devDependency. Every typescript package
+// ships a `tsc` bin, so a second one in node_modules makes install order decide which
+// compiler `npm run build` gets.
 
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -36,14 +39,12 @@ import zlib from "node:zlib";
 import path from "node:path";
 import { createRequire } from "node:module";
 
-const require = createRequire(import.meta.url);
-const ts = require("typescript-api");
-
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
 const pkgDir = path.join(root, "packages/tektonic");
 const reportDir = path.join(pkgDir, "api");
 const work = path.join(pkgDir, ".api-compat");
 const pkgName = "@tektonic-ci/core";
+const TS_API_VERSION = "5.9.3";
 
 const mode = process.argv[2];
 if (mode !== "check" && mode !== "update") {
@@ -116,7 +117,9 @@ function readExports(prog, file) {
 
 // ─── Part 1: the API report ──────────────────────────────────────────────────
 
-const printer = ts.createPrinter({ removeComments: true });
+// Both set once the TypeScript 5 API is loaded, before anything below runs.
+let ts;
+let printer;
 
 /** A class declaration without its private members, which are not API. */
 function publicClass(decl) {
@@ -252,25 +255,21 @@ function checksFor(e, ns) {
 }
 
 /**
- * Download and unpack the baseline into .api-compat/baseline/package. Fetched from the
- * tarball URL rather than with `npm pack`, whose --json output differs between
- * environments, and unpacked in-process, since the CI image carries no tar.
+ * Download and unpack a package from the registry into `dest`, returning its root
+ * (`dest/package`). Fetched from the tarball URL rather than with `npm pack`, whose --json
+ * output differs between environments, and unpacked in-process, since the CI image
+ * carries no tar.
  */
-async function fetchBaseline() {
-    const spec = process.env.API_BASELINE;
-    if (spec && fs.existsSync(spec)) return path.resolve(spec);
+async function fetchPackage(spec, dest) {
     // In the CI image npm wraps --json output in an array (as it does for several
     // workspaces), so accept either shape.
     const tarball = [].concat(JSON.parse(
-        execFileSync("npm", ["view", `${pkgName}@${spec || "latest"}`, "dist.tarball", "--json"], {
-            encoding: "utf8",
-        }),
+        execFileSync("npm", ["view", spec, "dist.tarball", "--json"], { encoding: "utf8" }),
     )).at(-1);
     if (typeof tarball !== "string") throw new Error(`npm view gave no tarball URL: ${JSON.stringify(tarball)}`);
     const res = await fetch(tarball);
     if (!res.ok) throw new Error(`fetching ${tarball}: HTTP ${res.status}`);
     const tar = zlib.gunzipSync(Buffer.from(await res.arrayBuffer()));
-    const dest = path.join(work, "baseline");
     fs.rmSync(dest, { recursive: true, force: true });
     // ustar: 512-byte headers, name at 0 (100 bytes), size at 124 (octal), type at 156,
     // prefix at 345; file data follows, padded to 512.
@@ -290,6 +289,20 @@ async function fetchBaseline() {
         off += Math.ceil(size / 512) * 512;
     }
     return path.join(dest, "package");
+}
+
+async function fetchBaseline() {
+    const spec = process.env.API_BASELINE;
+    if (spec && fs.existsSync(spec)) return path.resolve(spec);
+    return fetchPackage(`${pkgName}@${spec || "latest"}`, path.join(work, "baseline"));
+}
+
+/** The TypeScript 5 compiler API, downloaded once into the work dir. */
+async function loadTypeScriptApi() {
+    const dir = path.join(work, `typescript-${TS_API_VERSION}`);
+    const pkg = path.join(dir, "package");
+    if (!fs.existsSync(path.join(pkg, "lib/typescript.js"))) await fetchPackage(`typescript@${TS_API_VERSION}`, dir);
+    return createRequire(import.meta.url)(path.join(pkg, "lib/typescript.js"));
 }
 
 async function compat() {
@@ -339,7 +352,7 @@ async function compat() {
         JSON.stringify({
             compilerOptions: {
                 strict: true, noEmit: true, skipLibCheck: true, types: ["node"],
-                module: "commonjs", moduleResolution: "node10", target: "ES2020",
+                module: "nodenext", moduleResolution: "nodenext", target: "ES2020",
                 noUnusedLocals: false,
             },
             files: ["compat.ts"],
@@ -348,22 +361,26 @@ async function compat() {
 
     let output = "";
     try {
-        execFileSync(path.join(root, "node_modules/.bin/tsc"), ["-p", work, "--pretty", "false"], {
+        execFileSync(process.execPath, [path.join(root, "node_modules/typescript/bin/tsc"), "-p", work, "--pretty", "false"], {
             encoding: "utf8",
         });
     } catch (err) {
         output = `${err.stdout ?? ""}${err.stderr ?? ""}`;
     }
+    // Errors that don't belong to a check mean the checker itself is broken. They fail
+    // regardless of any declaration or version bump, which would otherwise waive them and
+    // silently turn the check off.
+    const failures = [];
     const firstCheckLine = header.join("\n").split("\n").length + 1;
     for (const block of output.split(/\n(?=\S)/)) {
         const m = block.match(/compat\.ts\((\d+),\d+\): error (TS\d+): ([\s\S]*)/);
         if (!m) {
-            if (block.trim()) findings.push({ export: "(compat file)", rule: "tsc error", message: block.trim() });
+            if (block.trim()) failures.push(block.trim());
             continue;
         }
         const c = checks[Number(m[1]) - firstCheckLine];
         if (!c) {
-            findings.push({ export: "(compat file)", rule: m[2], message: m[3].trim() });
+            failures.push(block.trim());
             continue;
         }
         // tsc names each side by its absolute import path; old/new is all that matters.
@@ -377,6 +394,11 @@ async function compat() {
     }
 
     console.log(`api-compat: ${pkgName}@${base.version} (baseline) → ${cur.version} (this tree), ${checks.length} checks`);
+    if (failures.length) {
+        console.log(`  the compatibility file itself failed to compile, so nothing was checked:`);
+        for (const f of failures) console.log(`    ${f.replace(/\n/g, "\n    ")}`);
+        return false;
+    }
     if (added.length) console.log(`  added (additive, a minor at least): ${added.join(", ")}`);
     if (!findings.length) {
         console.log("  no breaking changes");
@@ -429,6 +451,8 @@ function declaresBreaking(heading = "Unreleased") {
 
 // ─── Main ────────────────────────────────────────────────────────────────────
 
+ts = await loadTypeScriptApi();
+printer = ts.createPrinter({ removeComments: true });
 const cur = entries(pkgDir);
 const reportProg = program(Object.values(cur.entries).map((e) => path.join(pkgDir, e)));
 let ok = true;

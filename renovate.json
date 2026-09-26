@@ -67,13 +67,6 @@
       "separateMajorMinor": false
     },
     {
-      "description": [
-        "typescript-api is TypeScript 5 under an alias, used by scripts/api-compat.mjs only because it needs the compiler API, which TypeScript 7 does not ship. A major bump would install TS 7's native build under the alias and break the script, so it stays on 5.x; the typescript package itself is what builds the project."
-      ],
-      "matchPackageNames": ["typescript-api"],
-      "allowedVersions": "<6"
-    },
-    {
       "matchPackageNames": ["vite", "vitest", "@vitest/**", "@vitejs/**"],
       "groupName": "vitest"
     },
