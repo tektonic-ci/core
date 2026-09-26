@@ -17,3 +17,6 @@ repomix-output.xml
 
 # local code-graph index (tokensave)
 .tokensave/
+
+# scripts/api-compat.mjs work dir (baseline download, generated compat file)
+.api-compat/

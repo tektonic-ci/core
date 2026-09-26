@@ -19,12 +19,15 @@
     "lint:scripts": "npm run build && node packages/tektonic/dist/cli/index.js lint",
     "synth": "npm run build && node packages/tektonic/dist/cli/index.js synth examples/self-ci.ts",
     "check": "npm run build && node packages/tektonic/dist/cli/index.js check examples/self-ci.ts",
-    "graph": "npm run build && node packages/tektonic/dist/cli/index.js graph examples/self-ci.ts"
+    "graph": "npm run build && node packages/tektonic/dist/cli/index.js graph examples/self-ci.ts",
+    "api:check": "npm run build && node scripts/api-compat.mjs check",
+    "api:update": "npm run build && node scripts/api-compat.mjs update"
   },
   "devDependencies": {
     "@tektonic-ci/reporter-github": "^2.1.1",
     "@types/node": "^26.0.0",
     "typescript": "~7.0.0",
+    "typescript-api": "npm:typescript@^5.9.3",
     "vite": "^8.3.0",
     "vitest": "^5.0.0"
   }

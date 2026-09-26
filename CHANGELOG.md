@@ -18,6 +18,13 @@ publish from there. Nothing about `@tektonic-ci/core`'s API or output changes. T
 `lint:imports` check and `scripts/check-provider-imports.mjs` are gone: a provider built
 against core from npm cannot deep-import it in the first place.
 
+### Added: a public API check
+
+`npm run api:check` (self-CI's `check-api` step) fails a change that breaks
+`@tektonic-ci/core`'s public API against the last published release, unless the major is
+bumped, without building any provider. `packages/tektonic/api/` records the API as a
+reviewed report. See CONTRIBUTING's "Public API changes".
+
 ## 2.1.0
 
 ### Renamed: the packages are now published under `@tektonic-ci`
