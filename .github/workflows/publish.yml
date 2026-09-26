@@ -41,8 +41,9 @@ jobs:
       - run: npm ci
 
       # The tag must name the version being published, or a mistagged release would
-      # quietly publish whatever happens to be in package.json. The packages version
-      # together, so every workspace has to match; the root is private and versionless.
+      # quietly publish whatever happens to be in package.json. The workspace holds core
+      # alone (the providers publish from their own repos); the root is private and
+      # versionless.
       - name: Check the tag matches every package version
         run: |
           tag="${GITHUB_REF_NAME#v}"
@@ -63,8 +64,7 @@ jobs:
       # Re-running a release workflow is routine, and a version already on the registry
       # cannot be staged again — skip those, per package. Staged versions are not visible to
       # `npm view` until approved, so a re-run before approval stages that package again;
-      # reject the extra stage. Workspaces stage in the root's order, core first, and core
-      # must be approved first so the providers' peer range on it is satisfiable.
+      # reject the extra stage.
       - name: Stage
         run: |
           for ws in $(node -p "require('./package.json').workspaces.join(' ')"); do
