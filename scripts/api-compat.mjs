@@ -253,17 +253,19 @@ function checksFor(e, ns) {
 
 /**
  * Download and unpack the baseline into .api-compat/baseline/package. Fetched from the
- * tarball URL rather than with `npm pack`, whose --json output differs between npm
- * versions, and unpacked in-process, since the CI image carries no tar.
+ * tarball URL rather than with `npm pack`, whose --json output differs between
+ * environments, and unpacked in-process, since the CI image carries no tar.
  */
 async function fetchBaseline() {
     const spec = process.env.API_BASELINE;
     if (spec && fs.existsSync(spec)) return path.resolve(spec);
-    const tarball = JSON.parse(
+    // In the CI image npm wraps --json output in an array (as it does for several
+    // workspaces), so accept either shape.
+    const tarball = [].concat(JSON.parse(
         execFileSync("npm", ["view", `${pkgName}@${spec || "latest"}`, "dist.tarball", "--json"], {
             encoding: "utf8",
         }),
-    );
+    )).at(-1);
     if (typeof tarball !== "string") throw new Error(`npm view gave no tarball URL: ${JSON.stringify(tarball)}`);
     const res = await fetch(tarball);
     if (!res.ok) throw new Error(`fetching ${tarball}: HTTP ${res.status}`);
