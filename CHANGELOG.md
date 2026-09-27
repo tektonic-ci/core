@@ -26,6 +26,14 @@ declared under a `### Breaking` heading here, and then holds the release to a ne
 does this without building any provider. `packages/tektonic/api/` records the API as a
 reviewed report. See CONTRIBUTING's "Public API changes".
 
+### Changed: `tektonic synth` removes manifests the project no longer emits
+
+`synth` used to write in place, so a task dropped from a pipeline left its manifest behind, and
+`tektonic check` failed on the orphan until someone deleted it by hand. `synth` now makes the
+outdir match what the project emits, printing each file it removes. Runs with `--target` or
+`--outdir` still write in place and remove nothing. Anything else kept in an outdir is now
+deleted by `synth`, as `check` already reported it as an orphan.
+
 ### Added: a conformance kit for providers
 
 `@tektonic-ci/core/testing` exports `assertStatusReporterConformance`,

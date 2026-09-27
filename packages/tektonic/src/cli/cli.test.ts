@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
-import { diffDirs, isClean, listFiles, formatDiff } from './diff';
+import { diffDirs, isClean, listFiles, formatDiff, syncDir } from './diff';
 import { renderText, renderMermaid, type ProjectGraph } from './graph';
 import { resolveEntry, runnerFor, ENTRY_CANDIDATES } from './entry';
 import { collectScripts } from './lint';
@@ -73,6 +73,36 @@ describe('diffDirs', () => {
     expect(lines[0]).toContain('.tekton/a.yaml');
     expect(lines[1]).toContain('.tekton/b.yaml');
     expect(lines[2]).toContain('.tekton/c.yaml');
+  });
+});
+
+describe('syncDir', () => {
+  it('writes new and changed files, deletes orphans and the directories they empty', () => {
+    write('fresh/a.yaml', 'new');
+    write('fresh/tasks/b.yaml', 'b');
+    write('target/a.yaml', 'old');
+    write('target/tasks/b.yaml', 'b');
+    write('target/gone/deep/c.yaml', 'c');
+    const { removed } = syncDir(path.join(tmp, 'fresh'), path.join(tmp, 'target'));
+    expect(removed).toEqual(['gone/deep/c.yaml']);
+    expect(fs.readFileSync(path.join(tmp, 'target/a.yaml'), 'utf8')).toBe('new');
+    expect(fs.existsSync(path.join(tmp, 'target/gone'))).toBe(false);
+    expect(isClean(diffDirs(path.join(tmp, 'fresh'), path.join(tmp, 'target')))).toBe(true);
+  });
+
+  it('leaves identical files untouched', () => {
+    write('fresh/a.yaml', 'x');
+    const kept = write('target/a.yaml', 'x');
+    const past = new Date('2020-01-01');
+    fs.utimesSync(kept, past, past);
+    syncDir(path.join(tmp, 'fresh'), path.join(tmp, 'target'));
+    expect(fs.statSync(kept).mtime.getTime()).toBe(past.getTime());
+  });
+
+  it('creates the target when it does not exist yet', () => {
+    write('fresh/tasks/b.yaml', 'b');
+    syncDir(path.join(tmp, 'fresh'), path.join(tmp, 'target'));
+    expect(fs.readFileSync(path.join(tmp, 'target/tasks/b.yaml'), 'utf8')).toBe('b');
   });
 });
 
@@ -252,6 +282,26 @@ new TektonicProject({
     expect(result.output).toContain('removed-task.k8s.yaml');
   });
 
+  it('removes a manifest the project no longer emits, so check passes again', () => {
+    write('tektonic.js', project('.tekton'));
+    expect(runCli(['synth']).status).toBe(0);
+    write('.tekton/tasks/removed-task.k8s.yaml', 'apiVersion: tekton.dev/v1\n');
+    const result = runCli(['synth']);
+    expect(result.status).toBe(0);
+    expect(result.output).toContain('removed .tekton/tasks/removed-task.k8s.yaml');
+    expect(fs.existsSync(path.join(tmp, '.tekton', 'tasks', 'removed-task.k8s.yaml'))).toBe(false);
+    expect(fs.existsSync(path.join(tmp, '.tekton', 'demo-push.k8s.yaml'))).toBe(true);
+    expect(runCli(['check']).status).toBe(0);
+  });
+
+  it('removes nothing when synthesis fails', () => {
+    write('tektonic.js', project('.tekton'));
+    expect(runCli(['synth']).status).toBe(0);
+    write('tektonic.js', 'throw new Error("broken entrypoint")');
+    expect(runCli(['synth']).status).not.toBe(0);
+    expect(fs.existsSync(path.join(tmp, '.tekton', 'demo-push.k8s.yaml'))).toBe(true);
+  });
+
   // The redirect must not leak into the emitted YAML: PAC task annotations carry the
   // repo-relative outdir, so a check that changed them would compare noise.
   it('emits identical manifests whether or not the outdir is redirected', () => {
@@ -325,6 +375,13 @@ new TektonicProject({
     expect(runCli(['synth']).status).toBe(0);
     expect(emitted('.tekton/demo-push.k8s.yaml')).toBe(true);
     expect(emitted('.tekton/task/git-clone/0.1/git-clone.yaml')).toBe(true);
+  });
+
+  // --target emits a subset of what the outdir holds, so everything else in it must survive.
+  it('keeps the other targets\' files when narrowed to one', () => {
+    expect(runCli(['synth']).status).toBe(0);
+    expect(runCli(['synth', '--target', 'hub']).status).toBe(0);
+    expect(emitted('.tekton/demo-push.k8s.yaml')).toBe(true);
   });
 
   it('emits only the named target, into the outdir it was given', () => {
