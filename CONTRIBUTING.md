@@ -224,6 +224,28 @@ The registry is the channel; the git ref is not, and the README says so.
    the package again — reject the duplicate.
 
 4. Check the release: `npm view @tektonic-ci/core@X.Y.Z gitHead` must be the tagged commit.
+5. Move `next` up to the release: `npm dist-tag add @tektonic-ci/core@X.Y.Z next`. Provider CI
+   tests against `@tektonic-ci/core@next`, and npm moves that tag only when a prerelease is
+   published. Skip this step and, after 3.0.0 ships, providers keep testing `3.0.0-next.2`.
+
+### Cutting a prerelease
+
+A prerelease is how provider repos get to test a change before it is released: each runs the
+conformance kit from `@tektonic-ci/core/testing` against `@tektonic-ci/core@next` (see
+[docs/testing.md](docs/testing.md#running-it-against-the-next-core)). Cut one before any release
+that changes what synthesis emits, and before every major.
+
+1. Set `version` in `packages/tektonic/package.json` to `X.Y.Z-next.N`, starting at `N=0` and
+   counting up, and merge that to `main`. Leave the CHANGELOG entries under "Unreleased": a
+   prerelease is not a release. `check-api` treats `3.0.0-next.0` as the new major.
+2. Tag the merged commit `vX.Y.Z-next.N` and push the tag. The workflow sees the `-` in the
+   version and stages the package on the `next` dist-tag instead of `latest`, so a plain
+   `npm install @tektonic-ci/core` never picks it up.
+3. Approve the stage as for a release, then check `npm view @tektonic-ci/core dist-tags`: `next`
+   is the prerelease, and `latest` hasn't moved.
+
+A staged version's dist-tag is fixed when it is staged, so a prerelease tagged wrongly has to be
+rejected and staged again under the next `N`, not retagged.
 
 A **major** release of core has an ordering constraint: the provider repos declare a peer range
 on core's major, and this repo's own self-CI installs `@tektonic-ci/reporter-github`. Publish a

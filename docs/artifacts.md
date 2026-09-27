@@ -185,6 +185,11 @@ cross-pod file. The disambiguation is fixed in [ADR 0001](adr/0001-artifacts-and
 
 ## Testing a store
 
+`assertArtifactStoreConformance` covers the contract every store shares: paths with one
+writer, step naming, `uri` shape, and publish/fetch placement. Run it in your tests, and against
+`@tektonic-ci/core@next` (see [testing.md](testing.md#testing-a-provider-the-conformance-kit)).
+The examples below are for what is specific to your store.
+
 `synthTask` and `synthPipeline` from `@tektonic-ci/core/testing` render a task in memory, so a
 store is testable without a cluster:
 

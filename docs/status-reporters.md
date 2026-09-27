@@ -132,6 +132,13 @@ nothing that only shapes `finalStep` — each task still takes its final step fr
 reporter. The GitHub reporter's key leaves out `failOnError`, so a strict and a report-only
 instance share one pending task instead of emitting a `-2` copy.
 
+## Checking an implementation
+
+`assertStatusReporterConformance` from `@tektonic-ci/core/testing` drives a reporter through
+core's synthesis and checks every contract above. Run it in your package's tests, and against
+`@tektonic-ci/core@next` to hear about a break before it's released. See
+[testing.md](testing.md#testing-a-provider-the-conformance-kit).
+
 ## Images
 
 Reporter steps are injected steps, so they resolve their image the same way cache steps do:

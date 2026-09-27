@@ -35,6 +35,17 @@ export {
 } from './language-conformance';
 export type { ExitCodeContractOptions, ConformanceResult } from './language-conformance';
 
+/**
+ * Conformance suites for status reporters, cache backends and artifact stores — see
+ * `provider-conformance.ts`.
+ */
+export {
+  assertStatusReporterConformance,
+  assertCacheBackendConformance,
+  assertArtifactStoreConformance,
+} from './provider-conformance';
+export type { ProviderConformanceOptions } from './provider-conformance';
+
 /** A single task entry in a synthesized pipeline spec. */
 export interface PipelineTaskView {
   name: string;
