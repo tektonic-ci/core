@@ -204,7 +204,7 @@ describe('TektonicProject', () => {
     const pipelineRun = allObjects.find((o: any) => o.kind === 'PipelineRun');
     expect(pipelineRun.metadata.annotations['chains.tekton.dev/transparency-upload']).toBe('true');
     // PAC annotations are preserved.
-    expect(pipelineRun.metadata.annotations['pipelinesascode.tekton.dev/on-event']).toBeDefined();
+    expect(pipelineRun.metadata.annotations['pipelinesascode.tekton.dev/on-cel-expression']).toBeDefined();
   });
 
   it('emits spec.timeouts.pipeline when the pipeline sets a timeout', () => {

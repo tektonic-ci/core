@@ -14,24 +14,50 @@ const PAC = "pipelinesascode.tekton.dev";
 /** PAC bracket-list format, e.g. `[push, pull_request]`. */
 const list = (xs: string[]): string => `[${xs.join(", ")}]`;
 
-/** Whether the trigger requires the CEL path (multiple rules, a source-branch, or raw cel). */
+/** The ref prefix PAC reports as `target_branch` for a tag push. */
+const TAG_REF = "refs/tags/";
+
+/**
+ * Whether a rule fires on branch pushes but not tag pushes, and its branch filter could match a
+ * tag ref. PAC delivers both as `push` events, and a glob such as the default `*` matches
+ * `refs/tags/v1.0` too, so discrete annotations cannot keep tags out: only CEL can.
+ */
+function pushNeedsTagExclusion(r: TriggerRule): boolean {
+    const on = toList(r.on);
+    if (!on.includes(TRIGGER_EVENTS.PUSH) || on.includes(TRIGGER_EVENTS.TAG)) return false;
+    return r.branch === undefined || toList(r.branch).some((g) => /[*?]/.test(g));
+}
+
+/**
+ * Whether the trigger requires the CEL path: multiple rules, a source-branch, raw cel, or a
+ * branch push that has to exclude tag pushes.
+ */
 function needsCel(t: PipelineTrigger): boolean {
     return (
         !!t.cel ||
         t.rules.length > 1 ||
-        t.rules.some((r) => r.sourceBranch !== undefined || r.cel !== undefined)
+        t.rules.some((r) => r.sourceBranch !== undefined || r.cel !== undefined || pushNeedsTagExclusion(r))
     );
+}
+
+/**
+ * The CEL clause for a rule's events. PUSH and TAG both arrive as `push` and are told apart
+ * by the ref, so each keeps to its own: PUSH never fires on a tag, and TAG never on a branch.
+ */
+function eventClause(on: TRIGGER_EVENTS[]): string {
+    const push = on.includes(TRIGGER_EVENTS.PUSH);
+    const tag = on.includes(TRIGGER_EVENTS.TAG);
+    const parts: string[] = [];
+    if (push && tag) parts.push("event == 'push'");
+    else if (push) parts.push(`(event == 'push' && !target_branch.startsWith('${TAG_REF}'))`);
+    else if (tag) parts.push(`(event == 'push' && target_branch.startsWith('${TAG_REF}'))`);
+    if (on.includes(TRIGGER_EVENTS.PULL_REQUEST)) parts.push("event == 'pull_request'");
+    return parts.length === 1 ? parts[0] : `(${parts.join(" || ")})`;
 }
 
 /** Compiles one rule to a CEL boolean (its fields AND-ed). */
 function ruleToCel(r: TriggerRule): string {
-    const clauses: string[] = [];
-    const events = toList(r.on).map((e) => PAC_EVENT[e]);
-    clauses.push(
-        events.length === 1
-            ? `event == '${events[0]}'`
-            : `event in [${events.map((e) => `'${e}'`).join(", ")}]`,
-    );
+    const clauses: string[] = [eventClause(toList(r.on))];
     const branchClause = (field: "target_branch" | "source_branch", globs: string[]): string => {
         const parts = globs.map((g) =>
             /[*?]/.test(g) ? `${field}.matches('${globToRegex(g)}')` : `${field} == '${g}'`,
