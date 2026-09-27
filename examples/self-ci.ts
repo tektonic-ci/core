@@ -101,6 +101,23 @@ const npmTest = new Task({
                 npm run check
             `,
         },
+        {
+            // Anyone can write a provider, so core can't find out whether a change breaks
+            // one by building them all. This asks the compiler instead: it compiles the
+            // API of the last published core against this tree's, export by export, and
+            // fails on a break unless CHANGELOG.md's "## Unreleased" declares one under
+            // "### Breaking" or packages/tektonic/package.json bumps the major. It also fails when packages/tektonic/api/ no longer matches the build,
+            // so every public API change shows up as a reviewed diff.
+            // See scripts/api-compat.mjs.
+            name: "check-api",
+            image: nodeImage,
+            workingDir: "$(workspaces.workspace.path)",
+            script: sh`
+                set -e
+                if [ ! -d node_modules ]; then npm ci; fi
+                npm run api:check
+            `,
+        },
     ],
 });
 

@@ -20,6 +20,8 @@ npm run synth         # synthesize this repo's own CI → .tekton/
 npm run check         # fail if the committed .tekton/ output is stale
 npm run graph         # print the self-CI task DAG (FORMAT=mermaid for a flowchart)
 npm run lint:scripts  # lint extracted .sh/.bash/.nu/.py files
+npm run api:check     # fail on a breaking public-API change (see below)
+npm run api:update    # rewrite packages/tektonic/api/ after a public-API change
 ```
 
 ## Project structure
@@ -93,8 +95,48 @@ Run `tektonic lint` (or `npm run lint:scripts`) to syntax-check any `.sh`/`.bash
 
 1. Create a feature branch from `main`
 2. Make your changes
-3. Ensure `npm run build` and `npm test` pass
+3. Ensure `npm run build`, `npm test` and `npm run api:check` pass
 4. Open a PR against `main`
+
+### Public API changes
+
+Anyone can write a provider against core's extension points (`StatusReporter`,
+`CacheBackend`, `ArtifactStore`, `SynthTarget`), so there is no list of consumers to test a
+change against. `npm run api:check`, which self-CI runs as `check-api`, asks the compiler
+instead. It does two things:
+
+- **The API report.** `packages/tektonic/api/*.api.md` records every export's declaration,
+  and the check fails when it no longer matches the build. Run `npm run api:update` and
+  commit the result, so a public API change is always a visible diff in review.
+- **Compatibility with the last release.** The check downloads the declarations of
+  `@tektonic-ci/core@latest` and compiles each export's old form against its new one. An
+  interface or type alias must be assignable in both directions, so code implementing the
+  old type must still satisfy the new one, and values of the new type must still fit
+  where the old type was. A class must accept its old constructor arguments and keep its
+  public members. A function must stay callable the way it was.
+
+A break doesn't block the merge; it has to be declared. Add a section under `## Unreleased`
+in `CHANGELOG.md` whose heading starts with `### Breaking`, saying what broke and how to
+migrate. The check then passes and still prints what it found, for the reviewer. Later PRs
+pass on the same declaration until the release. The release PR moves `## Unreleased` under
+a version heading, so from then on only a major version bump satisfies the check. A
+release that should have been a major can't merge as a minor. A prerelease such as
+`3.0.0-rc.0` counts as a major. Additive changes pass: a new export, a new
+**optional** member, or a widened parameter. A new required member on an interface is a
+break, even on one core only ever hands out, because the check cannot tell which interfaces
+someone implements.
+
+Private and protected class members are not API and are ignored. So are the values of
+constants: an image pin changing is a behaviour change, not a type break.
+`API_BASELINE=<version>` compares against a version other than `latest`.
+
+The script needs the TypeScript compiler API to read the declarations, and TypeScript 7
+offers it only as `typescript/unstable/*`. So the script downloads TypeScript 5 into its
+gitignored work dir, `packages/tektonic/.api-compat/`. The project's own TypeScript 7
+still judges compatibility. TypeScript 5 is not a devDependency because every
+`typescript` package ships a `tsc` bin, and a second copy made install order decide which
+compiler `npm run build` used. If the check itself fails to compile, it fails outright,
+whatever the CHANGELOG declares.
 
 ## Dependency updates
 
@@ -161,7 +203,8 @@ The registry is the channel; the git ref is not, and the README says so.
 ### Cutting a release
 
 1. Bump `version` in `packages/tektonic/package.json`, move the CHANGELOG's "Unreleased"
-   entries under it, then commit and push to `main`.
+   entries under it, then commit and push to `main`. If "Unreleased" has a `### Breaking`
+   section, the version must be a new major, and `check-api` fails the release PR until it is.
 2. `git pull` and tag **the merged commit** on `main` as `vX.Y.Z`, then push the tag. A tag on
    a stale local `main` names the wrong tree, and the workflow's version check is what stops it.
    The workflow refuses to stage when the tag does not match the package version, re-runs
