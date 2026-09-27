@@ -34,6 +34,22 @@ outdir match what the project emits, printing each file it removes. Runs with `-
 `--outdir` still write in place and remove nothing. Anything else kept in an outdir is now
 deleted by `synth`, as `check` already reported it as an orphan.
 
+### Fixed: `TRIGGER_EVENTS.PUSH` no longer fires on tag pushes
+
+PAC delivers branch and tag pushes as the same `push` event, and `on-target-branch: [*]`
+matches `refs/tags/*` too, so a push pipeline also ran on every release tag. A PUSH rule now
+means branch pushes only. A PUSH on any branch or on a branch glob is emitted as
+`on-cel-expression` with `!target_branch.startsWith('refs/tags/')`, and a TAG rule in CEL is
+limited to `refs/tags/`. PUSH on exact branch names stays discrete, because no exact branch
+name can match a tag ref. A rule that lists both PUSH and TAG still fires on every push.
+Re-synthesize and commit: the annotations of affected push pipelines change.
+
+### Fixed: a step named like the status reporter's step fails at synth time
+
+A task whose steps included the reporter's final step name (`report-status` for the
+reference reporters) synthesized two steps of that name, and Tekton rejected the Task at
+apply time. Synthesis now throws, naming the task and the step.
+
 ### Added: a conformance kit for providers
 
 `@tektonic-ci/core/testing` exports `assertStatusReporterConformance`,

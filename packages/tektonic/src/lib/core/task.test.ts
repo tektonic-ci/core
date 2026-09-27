@@ -1254,6 +1254,25 @@ describe('Task', () => {
       expect(report.script).toContain(EXIT_CODE_PATH);
     });
 
+    it("rejects a user step that takes the reporter's step name, naming task and step", () => {
+      const t = new Task({
+        name: 'fmt',
+        statusReporter: new TestStatusReporter(),
+        steps: [{ name: 'report-status', image: 'alpine', script: nu`log "hi"` }],
+      });
+      expect(() => synthSteps(t)).toThrow(
+        /Task 'fmt': status reporter step 'report-status' collides with a step of the same name/,
+      );
+    });
+
+    it('does not check the reporter step name when the task does not report', () => {
+      const t = new Task({
+        name: 'fmt',
+        steps: [{ name: 'report-status', image: 'alpine', script: nu`log "hi"` }],
+      });
+      expect(synthSteps(t).map((s) => s.name)).toEqual(['report-status']);
+    });
+
     it('labels each user step with its own task/step name', () => {
       const t = new Task({
         name: 'go-security',
