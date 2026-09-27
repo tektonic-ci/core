@@ -123,6 +123,13 @@ const buildTask = new Task({
 });
 ```
 
+## Checking an implementation
+
+`assertCacheBackendConformance` from `@tektonic-ci/core/testing` checks a backend against what
+core's synthesis relies on: step naming, `spec.image` precedence, and both save strategies.
+Run it against `@tektonic-ci/core@next` too. See
+[testing.md](testing.md#testing-a-provider-the-conformance-kit).
+
 ## `BackendCtx`
 
 `restoreStep` and `saveStep` receive a `BackendCtx` carrying only what every backend

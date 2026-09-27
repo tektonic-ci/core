@@ -26,6 +26,16 @@ declared under a `### Breaking` heading here, and then holds the release to a ne
 does this without building any provider. `packages/tektonic/api/` records the API as a
 reviewed report. See CONTRIBUTING's "Public API changes".
 
+### Added: a conformance kit for providers
+
+`@tektonic-ci/core/testing` exports `assertStatusReporterConformance`,
+`assertCacheBackendConformance` and `assertArtifactStoreConformance`. Each drives a
+status reporter, cache backend or artifact store through core's own synthesis and fails, naming
+the broken contract, where the implementation does something core relies on it not to. Core
+now publishes prereleases on the npm `next` dist-tag, so a provider's CI can run the kit
+against `@tektonic-ci/core@next` and catch a behavioural break before it's released. See
+docs/testing.md, "Testing a provider".
+
 ## 2.1.0
 
 ### Renamed: the packages are now published under `@tektonic-ci`
