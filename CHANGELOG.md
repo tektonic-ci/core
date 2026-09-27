@@ -44,6 +44,12 @@ limited to `refs/tags/`. PUSH on exact branch names stays discrete, because no e
 name can match a tag ref. A rule that lists both PUSH and TAG still fires on every push.
 Re-synthesize and commit: the annotations of affected push pipelines change.
 
+### Fixed: a step named like the status reporter's step fails at synth time
+
+A task whose steps included the reporter's final step name (`report-status` for the
+reference reporters) synthesized two steps of that name, and Tekton rejected the Task at
+apply time. Synthesis now throws, naming the task and the step.
+
 ### Added: a conformance kit for providers
 
 `@tektonic-ci/core/testing` exports `assertStatusReporterConformance`,

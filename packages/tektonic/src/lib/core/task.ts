@@ -837,6 +837,24 @@ export class TaskDef<AN extends string = never> implements TaskLike {
                       ),
                   ]
                 : [];
+        // The reporter names its own step, so nothing stops it from taking a name the task
+        // already uses. Tekton would reject the Task at apply time; name the culprit here.
+        const takenStepNames = [
+            ...restoreSteps,
+            ...fetchSteps,
+            ...this.steps,
+            ...publishSteps,
+            ...provenanceStep,
+            ...saveSteps,
+        ].map((s) => s.name);
+        for (const s of reporterStep) {
+            if (takenStepNames.includes(s.name)) {
+                throw new Error(
+                    `Task '${this.name}': status reporter step '${s.name}' collides with a step of ` +
+                        `the same name — rename the step`,
+                );
+            }
+        }
         // When this task reports status, the framework owns the exit-code contract:
         // user steps capture their (worst) exit code to EXIT_CODE_PATH and run with
         // onError:'continue' so the appended reporter step always runs and reads it.

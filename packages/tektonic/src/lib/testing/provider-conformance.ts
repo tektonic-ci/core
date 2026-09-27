@@ -140,8 +140,9 @@ export function assertStatusReporterConformance(
   checks.push('createPendingTask uses the given name and carries every context');
 
   // The final step, standalone.
-  // Core appends the final step as is, so its name has to stay clear of the step names a
-  // project ordinarily writes. A fixed name such as `report-status` is fine; `build` is not.
+  // Core rejects a task whose steps include the final step's name, so a name a project
+  // ordinarily gives its own steps would break ordinary tasks at synth time. A fixed name such
+  // as `report-status` is fine; `build` is not.
   const userSteps = ['build', 'test', 'compile', 'lint', 'deploy'];
   const final = checkStep(kind, 'finalStep', during(kind, 'finalStep threw', () =>
     reporter.finalStep('conformance/build', userSteps),
@@ -151,7 +152,7 @@ export function assertStatusReporterConformance(
       kind,
       'finalStep may collide with a user step',
       `its step is named '${final.name}', a name projects commonly give their own steps, and a ` +
-        `task with a step of that name would carry two.`,
+        `task with a step of that name would fail to synthesize.`,
     );
   }
   checks.push('finalStep is a valid step, named apart from the user steps');
