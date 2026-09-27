@@ -5,7 +5,7 @@ import * as path from 'path';
 import { spawnSync } from 'child_process';
 import { CLI_ENV } from '../lib/core/tektonic-project';
 import { resolveEntry, runnerFor } from './entry';
-import { diffDirs, formatDiff, isClean } from './diff';
+import { diffDirs, formatDiff, isClean, syncDir } from './diff';
 import { renderMermaid, renderText, type ProjectGraph } from './graph';
 import { lintScripts } from './lint';
 
@@ -13,7 +13,8 @@ const USAGE = `tektonic — synthesize and verify Tekton pipelines
 
 Usage:
   tektonic synth [entry] [--outdir <dir>] [--target <name>]
-                                            Run the project entrypoint, writing its manifests
+                                            Run the project entrypoint, writing its manifests and
+                                            removing the ones it no longer emits
   tektonic check [entry]                    Synthesize to a temp dir and diff against the committed output
   tektonic graph [entry] [--format text|mermaid]
                                             Render the task DAG of each triggered pipeline
@@ -99,11 +100,44 @@ function cmdSynth(positional: string[], flags: Record<string, string>, cwd: stri
     console.error(`tektonic synth: --target needs a target name (e.g. --target hub)`);
     return 2;
   }
-  const env = {
-    ...(flags.outdir ? { [CLI_ENV.outdir]: path.resolve(cwd, flags.outdir) } : {}),
-    ...(flags.target ? { [CLI_ENV.targets]: flags.target } : {}),
-  };
-  return runEntry(entry, cwd, env);
+  // A narrowed or redirected synthesis writes in place and removes nothing: `--target` emits a
+  // subset of what the outdir holds, and `--outdir` is a scratch tree the project doesn't own.
+  if (flags.outdir || flags.target) {
+    const env = {
+      ...(flags.outdir ? { [CLI_ENV.outdir]: path.resolve(cwd, flags.outdir) } : {}),
+      ...(flags.target ? { [CLI_ENV.targets]: flags.target } : {}),
+    };
+    return runEntry(entry, cwd, env);
+  }
+
+  // A full synthesis goes through a temp dir and is then synced into each declared outdir,
+  // deleting the files the project no longer emits. Writing in place would leave those behind,
+  // and `check` — which treats the outdir as the project's — would fail until someone found
+  // and deleted them by hand.
+  const { root, manifest } = tempSynthDir('tektonic-synth-');
+  try {
+    const status = runEntry(entry, cwd, { [CLI_ENV.outdir]: root, [CLI_ENV.synthManifest]: manifest });
+    if (status !== 0) return status;
+    const redirects = readManifest<{ declared: string; actual: string }>(manifest);
+    if (redirects.length === 0) {
+      console.error(
+        `tektonic synth: '${path.relative(cwd, entry)}' synthesized no project — ` +
+          `the entrypoint must construct a TektonicProject when run.`,
+      );
+      return 1;
+    }
+    const synced = new Set<string>();
+    for (const { declared, actual } of redirects) {
+      if (synced.has(declared)) continue;
+      synced.add(declared);
+      const target = path.resolve(cwd, declared);
+      const { removed } = syncDir(actual, target);
+      for (const f of removed) console.log(`tektonic synth: removed ${declared}/${f} — no longer emitted`);
+    }
+    return 0;
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 }
 
 function cmdCheck(positional: string[], cwd: string): number {

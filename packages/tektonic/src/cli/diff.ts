@@ -61,6 +61,29 @@ export function diffDirs(freshDir: string, committedDir: string): DirDiff {
   return diff;
 }
 
+/**
+ * Makes `targetDir` hold exactly what `freshDir` does: writes files that are new or changed,
+ * leaves identical ones untouched (so their mtimes don't churn), deletes orphans and the
+ * directories they empty. Returns the orphans it deleted, relative to `targetDir`.
+ */
+export function syncDir(freshDir: string, targetDir: string): { removed: string[] } {
+  const diff = diffDirs(freshDir, targetDir);
+  for (const file of [...diff.missing, ...diff.stale]) {
+    const dest = path.join(targetDir, file);
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.copyFileSync(path.join(freshDir, file), dest);
+  }
+  for (const file of diff.orphan) {
+    fs.rmSync(path.join(targetDir, file));
+    // Walk up, removing directories the deletion left empty, but never the outdir itself.
+    for (let dir = path.dirname(path.join(targetDir, file)); dir !== targetDir; dir = path.dirname(dir)) {
+      if (fs.readdirSync(dir).length > 0) break;
+      fs.rmdirSync(dir);
+    }
+  }
+  return { removed: diff.orphan };
+}
+
 /** Renders a diff as the lines `tektonic check` prints, most actionable first. */
 export function formatDiff(outdir: string, d: DirDiff): string[] {
   const lines: string[] = [];

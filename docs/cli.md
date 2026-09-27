@@ -7,7 +7,8 @@ every consumer's Makefile.
 
 ```
 tektonic synth [entry] [--outdir <dir>] [--target <name>]
-                                          Run the project entrypoint, writing its manifests
+                                          Run the project entrypoint, writing its manifests and
+                                          removing the ones it no longer emits
 tektonic check [entry]                    Synthesize to a temp dir and diff against the committed output
 tektonic graph [entry] [--format text|mermaid]
                                           Render the task DAG of each triggered pipeline
@@ -28,6 +29,25 @@ Entrypoints run on plain `node`, which strips the types from a `.ts` file itself
 is installed, probed for or required. That needs Node 22.18 or newer, and an entrypoint written
 in erasable syntax: `enum`, parameter properties and `namespace` cannot be stripped. For either
 case, name a runner with `"tektonic": { "runner": "npx tsx" }` and it is used verbatim.
+
+## `synth` — writing the output
+
+`synth` runs the entrypoint and makes each project's `outdir` hold exactly what the project
+emits. It synthesizes into a temporary directory first, then writes only the files that are new
+or changed, and deletes the ones the project no longer emits, printing each deletion:
+
+```
+tektonic synth: removed .tekton/tasks/old-lint.k8s.yaml — no longer emitted
+```
+
+So a task you drop from a pipeline disappears from `.tekton/` on the next `synth`, and `check`
+passes without anyone deleting files by hand. The outdir belongs to tektonic: anything you
+keep there that the project doesn't emit is removed, as `check` would report it as an orphan
+anyway. If synthesis fails, nothing is written and nothing is removed.
+
+Narrowed or redirected runs are the exception. `--target` emits a subset of what the outdir
+holds, and `--outdir` writes to a directory the project doesn't declare, so both write in place
+and remove nothing.
 
 ## `check` — drift detection
 
