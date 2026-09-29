@@ -118,10 +118,11 @@ import {
   assertCacheBackendConformance,
   assertArtifactStoreConformance,
 } from '@tektonic-ci/core/testing';
+import type { InjectedStepImage } from '@tektonic-ci/core';
 
 // The image your users are expected to configure. Steps that ask for a capability through
 // injectedImageRef(...) resolve against it, and a missing one fails here as it would for them.
-const injectedStepImage = { image: 'ghcr.io/acme/ci:1', provides: ['sh', 'git', 'nushell'] };
+const injectedStepImage: InjectedStepImage = { image: 'ghcr.io/acme/ci:1', provides: ['sh', 'git', 'nushell'] };
 
 it('conforms to the StatusReporter contract', () => {
   assertStatusReporterConformance(() => new SlackStatusReporter({ channel: '#ci' }), { injectedStepImage });
