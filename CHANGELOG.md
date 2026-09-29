@@ -7,7 +7,7 @@ release from their own repos and log changes there:
 [cache-gcs](https://github.com/tektonic-ci/cache-gcs/blob/main/CHANGELOG.md). This file starts
 at the first change after 2.0.0; earlier history is in the git log.
 
-## Unreleased
+## Unreleased  ## 2.2.0
 
 ### Changed: this repo holds core only
 
