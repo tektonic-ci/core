@@ -399,6 +399,32 @@ in the pipeline mounts defaults to `skipRestoreIfPathsExist: true`, with a warni
 task and workspace: a swap is atomic, but it still replaces a warm tree the other task just
 populated. Set `skipRestoreIfPathsExist` explicitly (either value) to take that decision back
 and silence the warning.
+
+#### One producer, many consumers: `warmCache`
+
+When one task warms a cache and later tasks reuse the tree it leaves, declare the cache once
+with `warmCache` instead of hand-deriving a spec per task:
+
+```typescript
+import { warmCache } from '@tektonic-ci/core';
+
+const goCache = warmCache({
+  name: 'go', key: ['go.sum'], paths: ['.go-mod', '.go-build'],
+  workspace: goCacheWs, compress: true, workingDir: '$(workspaces.workspace.path)',
+});
+
+const goBuild = new Task({ name: 'go-build', caches: [goCache.producer], ... });
+const goTest  = new Task({ name: 'go-test', needs: [goBuild],
+                           caches: [goCache.consumer({ forceSave: true })], ... }); // writes test deps back
+const goVuln  = new Task({ name: 'govulncheck', needs: [goBuild], caches: [goCache.consumer()], ... });
+```
+
+The producer restores and saves normally. A consumer sets `skipRestoreIfPathsExist: true`, so
+it relies on the producer having populated the paths already. The pipeline enforces that: if a
+consumer's producer is missing from the pipeline, is declared by more than one task, or is not
+in the consumer's transitive `needs`, synthesis fails. The spec you pass may not set
+`skipRestoreIfPathsExist`, because the declaration controls it.
+
 ### Task names are project-wide
 
 `TektonicProject` emits one Task manifest per task **name** and every pipeline references it by

@@ -1819,6 +1819,30 @@ declare function unsafeAllowExit(script: Script): Script;
 declare function unwrapGated(task: TaskLike): TaskLike;
 ```
 
+## warmCache
+
+```ts
+declare function warmCache(spec: TaskCacheSpec): WarmCache;
+```
+
+## WarmCache
+
+```ts
+interface WarmCache {
+    readonly name: string;
+    readonly producer: TaskCacheSpec;
+    consumer(opts?: WarmCacheConsumerOptions): TaskCacheSpec;
+}
+```
+
+## WarmCacheConsumerOptions
+
+```ts
+interface WarmCacheConsumerOptions {
+    forceSave?: boolean;
+}
+```
+
 ## WhenClause
 
 ```ts
