@@ -126,6 +126,12 @@ Work is NOT complete until pushed. Before ending a session:
 
 ## CI and Automation
 
+This repo is `tektonic-ci/core`, and it publishes `@tektonic-ci/core` alone. The provider
+packages live in sibling repos in the same org, [`tektonic-ci/cache-gcs`](https://github.com/tektonic-ci/cache-gcs)
+and [`tektonic-ci/reporter-github`](https://github.com/tektonic-ci/reporter-github) (cloned at
+`~/code/cache-gcs` and `~/code/reporter-github`). Each has its own self-CI, its own trusted
+publisher, and its own `CLAUDE.md`. The org profile README lives in `tektonic-ci/.github`.
+
 **All CI and automation runs through tektonic itself** — the pipelines in `.tekton/`,
 synthesized from [`examples/self-ci.ts`](examples/self-ci.ts). Do not reach for GitHub
 Actions to automate something; if a job needs adding, it belongs in the self-CI pipeline.
@@ -133,7 +139,10 @@ Actions to automate something; if a job needs adding, it belongs in the self-CI 
 The one exemption is [`.github/workflows/publish.yml`](.github/workflows/publish.yml),
 and only because npm's trusted publishing accepts GitHub Actions, GitLab CI/CD and
 CircleCI as OIDC issuers — a self-hosted cluster cannot be a trusted publisher. That
-constraint is the whole reason it exists; nothing else inherits the exemption.
+constraint is the whole reason it exists; nothing else inherits the exemption. The rule is
+the same in every package repo in the org: each has exactly one `publish.yml`, bound to that
+repo's own trusted publisher on npm. Core's copy loops over the workspace, and a provider's
+copy publishes its single package.
 
 **`.github/` holds that one file and nothing else**, and the exemption has already been
 tested once: a `renovate-synth.yml` workflow was written to re-synthesize `.tekton/`
