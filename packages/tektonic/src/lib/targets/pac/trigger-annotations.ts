@@ -17,6 +17,9 @@ const list = (xs: string[]): string => `[${xs.join(", ")}]`;
 /** The ref prefix PAC reports as `target_branch` for a tag push. */
 const TAG_REF = "refs/tags/";
 
+/** A `branch` glob as a TAG rule means it: the tag name under `refs/tags/`. */
+const tagRef = (g: string): string => (g.startsWith(TAG_REF) ? g : TAG_REF + g);
+
 /**
  * Whether a rule fires on branch pushes but not tag pushes, and its branch filter could match a
  * tag ref. PAC delivers both as `push` events, and a glob such as the default `*` matches
@@ -28,15 +31,22 @@ function pushNeedsTagExclusion(r: TriggerRule): boolean {
     return r.branch === undefined || toList(r.branch).some((g) => /[*?]/.test(g));
 }
 
+/** Whether a rule fires on TAG and on some other event too. */
+function mixesTag(r: TriggerRule): boolean {
+    const on = toList(r.on);
+    return on.includes(TRIGGER_EVENTS.TAG) && on.length > 1;
+}
+
 /**
- * Whether the trigger requires the CEL path: multiple rules, a source-branch, raw cel, or a
- * branch push that has to exclude tag pushes.
+ * Whether the trigger requires the CEL path: multiple rules, a source-branch, raw cel, a
+ * branch push that has to exclude tag pushes, or a rule mixing TAG with another event (the
+ * discrete annotations have one target-branch list, which cannot hold a tag ref and a branch).
  */
 function needsCel(t: PipelineTrigger): boolean {
     return (
         !!t.cel ||
         t.rules.length > 1 ||
-        t.rules.some((r) => r.sourceBranch !== undefined || r.cel !== undefined || pushNeedsTagExclusion(r))
+        t.rules.some((r) => r.sourceBranch !== undefined || r.cel !== undefined || pushNeedsTagExclusion(r) || mixesTag(r))
     );
 }
 
@@ -64,7 +74,18 @@ function ruleToCel(r: TriggerRule): string {
         );
         return parts.length === 1 ? parts[0] : `(${parts.join(" || ")})`;
     };
-    if (r.branch !== undefined) clauses.push(branchClause("target_branch", toList(r.branch)));
+    if (r.branch !== undefined) {
+        // A tag arrives with target_branch refs/tags/<name>, so a TAG rule's globs match under
+        // that prefix; a rule that also fires on branches keeps the bare glob beside it.
+        const globs = toList(r.branch);
+        const on = toList(r.on);
+        const targets = !on.includes(TRIGGER_EVENTS.TAG)
+            ? globs
+            : on.length === 1
+              ? globs.map(tagRef)
+              : globs.flatMap((g) => [g, tagRef(g)]);
+        clauses.push(branchClause("target_branch", targets));
+    }
     if (r.sourceBranch !== undefined) clauses.push(branchClause("source_branch", toList(r.sourceBranch)));
     if (r.pathsChanged?.length) {
         const any = r.pathsChanged
@@ -94,7 +115,7 @@ export function triggerAnnotations(t: PipelineTrigger): Record<string, string> {
         ann[`${PAC}/on-event`] = list(events);
         const isTag = toList(r.on).includes(TRIGGER_EVENTS.TAG);
         ann[`${PAC}/on-target-branch`] = isTag
-            ? "[refs/tags/*]"
+            ? list(r.branch !== undefined ? toList(r.branch).map(tagRef) : [`${TAG_REF}*`])
             : list(r.branch !== undefined ? toList(r.branch) : ["*"]);
         if (r.pathsChanged?.length) ann[`${PAC}/on-path-changed`] = list(r.pathsChanged);
         if (r.pathsIgnored?.length) ann[`${PAC}/on-path-change-ignore`] = list(r.pathsIgnored);
