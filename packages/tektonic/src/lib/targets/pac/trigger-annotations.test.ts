@@ -57,6 +57,50 @@ describe('triggerAnnotations — PUSH and TAG stay apart', () => {
     })[`${PAC}/on-cel-expression`];
     expect(cel).toBe("event == 'push' || event == 'pull_request'");
   });
+
+  // PAC reports a tag push's target_branch as refs/tags/<name>, so a TAG rule's branch glob
+  // has to match under that prefix: bare, it was dropped (discrete) or never matched (CEL).
+  it('a TAG rule filters on its branch glob under refs/tags/ (discrete)', () => {
+    const a = triggerAnnotations({ rules: [{ on: TRIGGER_EVENTS.TAG, branch: 'v*' }] });
+    expect(a[`${PAC}/on-event`]).toBe('[push]');
+    expect(a[`${PAC}/on-target-branch`]).toBe('[refs/tags/v*]');
+  });
+
+  it('a TAG glob already under refs/tags/ is not prefixed twice', () => {
+    const a = triggerAnnotations({ rules: [{ on: TRIGGER_EVENTS.TAG, branch: 'refs/tags/v*' }] });
+    expect(a[`${PAC}/on-target-branch`]).toBe('[refs/tags/v*]');
+  });
+
+  it('a TAG rule filters on its branch glob under refs/tags/ (CEL)', () => {
+    const cel = triggerAnnotations({
+      rules: [{ on: TRIGGER_EVENTS.TAG, branch: 'v*' }, { on: TRIGGER_EVENTS.PULL_REQUEST }],
+    })[`${PAC}/on-cel-expression`];
+    expect(cel).toBe(`(${onlyTags} && target_branch.matches('^refs/tags/v[^/]*$')) || event == 'pull_request'`);
+  });
+
+  it('a TAG rule on an exact name compares the full tag ref', () => {
+    const cel = triggerAnnotations({
+      rules: [{ on: TRIGGER_EVENTS.TAG, branch: 'v1.0' }, { on: TRIGGER_EVENTS.PULL_REQUEST }],
+    })[`${PAC}/on-cel-expression`];
+    expect(cel).toContain("target_branch == 'refs/tags/v1.0'");
+  });
+
+  it('a single rule mixing TAG with PULL_REQUEST uses CEL', () => {
+    const a = triggerAnnotations({ rules: [{ on: [TRIGGER_EVENTS.TAG, TRIGGER_EVENTS.PULL_REQUEST], branch: 'main' }] });
+    expect(a[`${PAC}/on-event`]).toBeUndefined();
+    expect(a[`${PAC}/on-target-branch`]).toBeUndefined();
+    expect(a[`${PAC}/on-cel-expression`]).toBe(
+      `((${onlyTags} || event == 'pull_request') && (target_branch == 'main' || target_branch == 'refs/tags/main'))`,
+    );
+  });
+
+  it('PUSH and TAG together match a glob as a branch or as a tag', () => {
+    const a = triggerAnnotations({ rules: [{ on: [TRIGGER_EVENTS.PUSH, TRIGGER_EVENTS.TAG], branch: 'v*' }] });
+    expect(a[`${PAC}/on-target-branch`]).toBeUndefined();
+    expect(a[`${PAC}/on-cel-expression`]).toBe(
+      "(event == 'push' && (target_branch.matches('^v[^/]*$') || target_branch.matches('^refs/tags/v[^/]*$')))",
+    );
+  });
 });
 
 describe('triggerAnnotations — compound → on-cel-expression', () => {

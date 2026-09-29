@@ -85,13 +85,14 @@ const monorepo = new GitPipeline({
 
 **Branch semantics.** `branch` is unambiguous because each rule names its event: for `push` it's the
 pushed branch; for `pull_request` it's the **target** (merge-into) branch. Use `sourceBranch` for the
-PR **head** (merge-from). A `TAG` rule always targets `refs/tags/*`.
+PR **head** (merge-from). For a `TAG` rule `branch` filters the tag name: `branch: 'v*'` matches
+`refs/tags/v*` (a glob already starting `refs/tags/` is used as-is), and without one it fires on every tag.
 
 **How it compiles.** A single rule with only `on`/`branch`/`pathsChanged` emits discrete
 `on-event`/`on-target-branch`/`on-path-changed` annotations (no CEL). Anything compound — multiple
-rules, any `sourceBranch`, or `cel` — compiles to a single `on-cel-expression` (evaluated by the PAC
+rules, any `sourceBranch`, `cel`, or a rule mixing `TAG` with another event — compiles to a single `on-cel-expression` (evaluated by the PAC
 operator; no Tekton feature flag). `comment`/`labels`/`cancelInProgress` always emit as their own
-annotations. TAG rules always target `refs/tags/*`.
+annotations.
 
 ## Param bindings
 
