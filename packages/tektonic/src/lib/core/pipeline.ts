@@ -8,6 +8,8 @@ import type { PipelineTrigger } from './trigger';
 import { Condition } from './condition';
 import { applyOverrides, unwrapGated, GatedTask } from './pipeline-task';
 import type { TaskArtifact } from './artifact';
+import { warmCacheLink } from './warm-cache';
+import type { WarmCache } from './warm-cache';
 import type { PipelineTaskOverrides } from './pipeline-task';
 
 /**
@@ -170,6 +172,7 @@ export class Pipeline {
 
     this.flagSharedWorkspaceCaches(regularTasks);
     this.validateArtifacts(regularTasks);
+    this.validateWarmCaches(regularTasks);
 
     // Collect cache-save finally tasks from TaskDef nodes only.
     const cacheFinallyTasks = regularTasks
@@ -227,19 +230,7 @@ export class Pipeline {
   private validateArtifacts(tasks: TaskLike[]): void {
     const inPipeline = new Set(tasks);
     const consumed = new Set<TaskArtifact>();
-    const reachable = new Map<TaskLike, Set<TaskLike>>();
-    const dependenciesClosure = (task: TaskLike): Set<TaskLike> => {
-      const memo = reachable.get(task);
-      if (memo) return memo;
-      const acc = new Set<TaskLike>();
-      reachable.set(task, acc);
-      for (const dep of this.dependenciesOf(task)) {
-        if (acc.has(dep)) continue;
-        acc.add(dep);
-        for (const t of dependenciesClosure(dep)) acc.add(t);
-      }
-      return acc;
-    };
+    const dependenciesClosure = this.dependenciesClosure();
 
     for (const task of tasks) {
       if (!(task instanceof TaskDef)) continue;
@@ -278,6 +269,84 @@ export class Pipeline {
           `tektonic [${this.name}/${task.name}]: artifact '${artifact.name}' is declared but ` +
             `no task in this pipeline consumes it. That is fine for something a human ` +
             `collects; drop it from 'produces' if it is a leftover.`,
+        );
+      }
+    }
+  }
+
+  /**
+   * A memoized "every task this one transitively needs" lookup, for validators that ask
+   * whether one task is ordered before another.
+   */
+  private dependenciesClosure(): (task: TaskLike) => Set<TaskLike> {
+    const reachable = new Map<TaskLike, Set<TaskLike>>();
+    const closure = (task: TaskLike): Set<TaskLike> => {
+      const memo = reachable.get(task);
+      if (memo) return memo;
+      const acc = new Set<TaskLike>();
+      reachable.set(task, acc);
+      for (const dep of this.dependenciesOf(task)) {
+        if (acc.has(dep)) continue;
+        acc.add(dep);
+        for (const t of closure(dep)) acc.add(t);
+      }
+      return acc;
+    };
+    return closure;
+  }
+
+  /**
+   * Checks every {@link warmCache} declaration used in the pipeline: a consumer skips its
+   * restore on the promise that the producer already populated the paths, and this is
+   * where that promise is kept. A consumer whose producer is absent, ambiguous, or not
+   * ordered before it would otherwise run cold — or restore mid-build under a concurrent
+   * task — with nothing to say why.
+   */
+  private validateWarmCaches(tasks: TaskLike[]): void {
+    const producers = new Map<WarmCache, TaskDef[]>();
+    const consumers: Array<{ task: TaskDef; cache: WarmCache }> = [];
+    for (const task of tasks) {
+      if (!(task instanceof TaskDef)) continue;
+      for (const spec of task.caches) {
+        const link = warmCacheLink(spec);
+        if (!link) continue;
+        if (link.role === 'producer') {
+          producers.set(link.cache, [...(producers.get(link.cache) ?? []), task]);
+        } else {
+          consumers.push({ task, cache: link.cache });
+        }
+      }
+    }
+
+    const dependenciesClosure = this.dependenciesClosure();
+    for (const { task, cache } of consumers) {
+      const found = producers.get(cache) ?? [];
+      if (found.length === 0) {
+        throw new Error(
+          `Pipeline '${this.name}': task '${task.name}' consumes warm cache '${cache.name}', ` +
+          `but no task in this pipeline declares its producer — add the task that ` +
+          `declares '${cache.name}'.producer to '${task.name}'.needs`,
+        );
+      }
+      if (found.length > 1) {
+        throw new Error(
+          `Pipeline '${this.name}': warm cache '${cache.name}' has more than one producer ` +
+          `(${found.map(t => `'${t.name}'`).join(', ')}) — exactly one task may warm it`,
+        );
+      }
+      const [producer] = found;
+      if (producer === task) {
+        throw new Error(
+          `Pipeline '${this.name}': task '${task.name}' declares both the producer and a ` +
+          `consumer of warm cache '${cache.name}' — use one`,
+        );
+      }
+      if (!dependenciesClosure(task).has(producer)) {
+        throw new Error(
+          `Pipeline '${this.name}': task '${task.name}' consumes warm cache '${cache.name}', ` +
+          `but its producer '${producer.name}' is not ordered before it — add ` +
+          `'${producer.name}' to '${task.name}'.needs. The consumer skips restore when the ` +
+          `paths exist, and only that ordering guarantees they do`,
         );
       }
     }

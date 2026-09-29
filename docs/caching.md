@@ -87,6 +87,13 @@ All fields live on `TaskCacheSpec` (the entries in a task's `caches` array):
 | `saveStrategy` | `'step'` | `'finally'` runs save in a separate pod — see below |
 | `computeResources` | stepTemplate default | CPU/memory for the injected cache steps |
 
+### One producer, many consumers
+
+If one task warms a cache on a shared workspace and later tasks reuse it, declare it once with
+`warmCache(spec)` and give tasks `.producer` or `.consumer({ forceSave? })`. Each consumer skips
+restore when the paths already exist. Synthesis fails when a consumer's producer is missing or
+not ordered before it. See [agent-guide.md](agent-guide.md#one-producer-many-consumers-warmcache).
+
 ### Compression
 
 `compress: true` collapses thousands of small file operations into a single archive
