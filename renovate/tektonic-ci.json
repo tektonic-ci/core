@@ -4,10 +4,12 @@
     "Shared Renovate preset for every repo in the tektonic-ci org: core extends it as local>tektonic-ci/core//renovate/tektonic-ci, and so do the provider repos. It lives here rather than in tektonic-ci/.github because agent sessions cannot attach that repo.",
     "Goal: in-range updates batch weekly and merge themselves on green CI; majors, the peer range and security fixes are the only PRs that need a human.",
     "Automerge leans on GitHub's native auto-merge (platformAutomerge), which waits only on the checks branch protection marks required. The PR pipeline's checks must be required on main and test-core-next must not be — it is advisory, and Renovate's own fallback merge would treat its red status as a failure. Without branch protection, GitHub has nothing to wait for and Renovate falls back to requiring every status green.",
-    "PR automerge rather than branch automerge: the push pipeline does run on renovate/* branches, but it skips build-npm."
+    "PR automerge rather than branch automerge: the push pipeline does run on renovate/* branches, but it skips build-npm.",
+    "The schedule is in America/Los_Angeles, the timezone of the self-hosted Renovate CronJob (0 2-23/4 * * *), so the window holds the same runs year-round; in UTC it would drift against the cron at each DST change. Monday 00:00-11:59 catches the 02:00, 06:00 and 10:00 runs: the first opens the weekly PRs, the others are backups if one is missed. Existing branches are still rebased outside the window (updateNotScheduled), so a PR left conflicted by another merge is fixed at the next 4-hourly run."
   ],
   "extends": ["config:recommended"],
-  "schedule": ["* 0-5 * * 1"],
+  "timezone": "America/Los_Angeles",
+  "schedule": ["* 0-11 * * 1"],
   "minimumReleaseAge": "3 days",
   "internalChecksFilter": "strict",
   "automergeType": "pr",
@@ -15,7 +17,7 @@
   "lockFileMaintenance": {
     "enabled": true,
     "automerge": true,
-    "schedule": ["* 0-5 * * 1"]
+    "schedule": ["* 0-11 * * 1"]
   },
   "postUpgradeTasks": {
     "description": [
