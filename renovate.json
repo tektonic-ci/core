@@ -1,9 +1,7 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:recommended"],
-  "lockFileMaintenance": {
-    "enabled": true
-  },
+  "extends": ["local>tektonic-ci/core//renovate/tektonic-ci"],
+  "description": "Org-wide rules (schedule, grouping, automerge, the .tekton re-synth) live in renovate/tektonic-ci.json, shared with the provider repos. Only what is specific to core stays here. Presets are read from main, so a change to the shared file takes effect once merged, not on its PR.",
   "ignorePaths": [
     "**/node_modules/**",
     "**/bower_components/**",
@@ -13,24 +11,11 @@
     "**/tests/**",
     "**/__fixtures__/**"
   ],
-  "postUpgradeTasks": {
-    "description": [
-      ".tekton/ is generated from the image pins in TypeScript, and Renovate edits the pins — so without this the manifests are left naming the old tag and check-manifests fails the PR, correctly. This runs the generator on the branch after the bump is applied, so the PR carries both sides of it.",
-      "Runs on every branch rather than only the image ones: fileFilters means a branch whose synthesis is byte-identical (an npm bump, lock file maintenance) commits nothing, and a dependency that does move the output is caught rather than assumed not to exist.",
-      "executionMode is 'branch' so the generator runs once over the final set of pins, not once per upgrade — the image bumps are grouped into one branch (see packageRules below), and synthesizing per-upgrade would just redo the same work.",
-      "This needs the self-hosted Renovate's global config to allow these commands: allowedCommands must admit '^npm ci' and '^npm run synth' (allowedPostUpgradeCommands on Renovate before 41), or the tasks are skipped silently and the manifests fall behind again.",
-      "check-manifests in the self-CI test-npm task is unchanged and stays the backstop: if these tasks ever stop running, the drift turns the check red instead of merging quietly."
-    ],
-    "commands": ["npm ci --ignore-scripts", "npm run synth"],
-    "fileFilters": [".tekton/**"],
-    "executionMode": "branch"
-  },
   "customManagers": [
     {
       "description": [
-        "Image pins live in TypeScript; .tekton/ is synthesized from it. Renovate only ever saw the output — the Ansible manager matches any tasks/*.yaml, so .tekton/tasks/*.k8s.yaml was rewritten by accident of the path while the source that generates it stayed behind, and the next `tektonic synth` would have reverted the bump.",
-        "Adding this manager did not stop that one, and the Dependency Dashboard went on listing the generated manifests under `ansible`; the first packageRule below is what finally switches it off.",
-        "This manager puts the pins themselves under Renovate; postUpgradeTasks above re-synthesizes the manifests that follow from them, so both sides of a bump land on one branch.",
+        "Image pins live in TypeScript; .tekton/ is synthesized from it. Renovate only ever saw the output — the Ansible manager matches any tasks/*.yaml, so .tekton/tasks/*.k8s.yaml was rewritten by accident of the path while the source that generates it stayed behind, and the next `tektonic synth` would have reverted the bump. The shared preset switches that manager off.",
+        "This manager puts the pins themselves under Renovate; the shared postUpgradeTasks re-synthesize the manifests that follow from them, so both sides of a bump land on one branch.",
         "config:recommended ignores examples/ by default, which is why ignorePaths is spelled out here without it.",
         "Add a file when it grows a versioned image literal. Unversioned tags (base:stable) are left alone by the leading digit required of currentValue."
       ],
@@ -43,36 +28,6 @@
         "['\"](?<depName>ghcr\\.io/[^'\"\\s:]+):(?<currentValue>\\d[^'\"\\s]*)['\"]"
       ],
       "datasourceTemplate": "docker"
-    }
-  ],
-  "packageRules": [
-    {
-      "description": [
-        "There is no Ansible in this repository. The built-in manager matches any tasks/*.yaml, so the only thing it ever found was .tekton/tasks/*.k8s.yaml — generated output, which it would propose editing while the TypeScript pins that produce it stayed behind, and which the next synth would revert. The custom regex manager below covers every versioned pin on the files that actually declare it.",
-        "Left on, it also splits the 'ci images' group: that rule matches custom.regex, so the ansible half of a gcloud bump would carry a different groupName than the regex half.",
-        "A packageRule rather than an ignorePaths entry for .tekton/**, because postUpgradeTasks.fileFilters has to keep matching .tekton/** to commit the re-synthesized manifests, and this way the two settings cannot interact. (disabledManagers would be the obvious spelling, but that option no longer exists in Renovate.)"
-      ],
-      "matchManagers": ["ansible"],
-      "enabled": false
-    },
-    {
-      "description": [
-        "One PR for every CI image pin, not one per image. A re-synth rewrites whichever task manifests use the image, so separate PRs for nodejs and syft both rewrite test-npm.k8s.yaml and anchore-scan.k8s.yaml and conflict with each other the moment one merges. Grouped, the generator runs once over the final set of pins.",
-        "separateMajorMinor is off for the same reason: these images are all built from the same apko-cicd repo and are reviewed together, and a split major PR would be a second branch racing the minor one over the same generated files."
-      ],
-      "matchManagers": ["custom.regex"],
-      "matchDatasources": ["docker"],
-      "groupName": "ci images",
-      "groupSlug": "ci-images",
-      "separateMajorMinor": false
-    },
-    {
-      "matchPackageNames": ["vite", "vitest", "@vitest/**", "@vitejs/**"],
-      "groupName": "vitest"
-    },
-    {
-      "matchPackageNames": ["typedoc", "typedoc-plugin-markdown"],
-      "groupName": "typedoc"
     }
   ]
 }
