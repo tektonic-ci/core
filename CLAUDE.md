@@ -31,9 +31,14 @@ The environment is defined in `.flox/env/manifest.toml` and currently provides:
 ## Cloud Sessions (Claude Code on the web)
 
 A cold container has no Flox, so `bd`, `node` and the Dolt database are all absent.
-`.claude/hooks/session-start.sh` handles it on SessionStart: installs `bd` via
-`go install` if missing, puts it on PATH for the session, rebuilds the Dolt database
-from the committed `.beads/issues.jsonl`, runs `npm install`, then `bd prime`.
+Two SessionStart hooks, which run in parallel, handle it:
+
+- `.claude/hooks/beads-session-start.sh` (shared by every repo, vendored from
+  pfenerty/planning by `~/code/common/bin/hub vendor`; edit it there, not here)
+  `go install`s `bd` pinned to the local version, rebuilds the Dolt database from the
+  committed `.beads/issues.jsonl` (or, if one exists, imports only newer rows),
+  configures the `merge=beads` driver, and runs `bd prime`.
+- `.claude/hooks/session-start.sh` runs `npm install`.
 
 Two things worth knowing:
 
@@ -42,14 +47,15 @@ Two things worth knowing:
   committed. bd auto-exports after each write; commit the file alongside your work.
   The setup is the same in every repo and is documented in the planning hub
   (`~/code/common/CLAUDE.md`).
-- **Merges of the file are row-level on the maintainer's machine, line-level elsewhere.**
-  `.gitattributes` routes it to `merge=beads`, and locally that driver is
-  `~/code/common/bin/bd-jsonl-merge`: per issue, the newer `updated_at` wins. A cloud
-  container has no such driver configured, so git falls back to a line merge there.
-  Commit `287b508` shows what a careless merge does: it reverted four closures and
-  dropped three issues from main. In a cloud session, after any merge or rebase that
-  touches the file, compare it with the branch you merged
-  (`git show <other>:.beads/issues.jsonl`) before trusting `bd ready`.
+- **Merges of the file are row-level.** `.gitattributes` routes it to `merge=beads`:
+  per issue, the newer `updated_at` wins. Locally the driver is
+  `~/code/common/bin/bd-jsonl-merge`, configured globally. In a cloud container the
+  beads SessionStart hook points it at the vendored `.claude/hooks/bd-jsonl-merge`. Any
+  other environment (a CI runner, a fresh clone with no hooks run) falls back to a line
+  merge. Commit `287b508` shows what that can do: it reverted four closures and dropped
+  three issues from main. There, after any merge or rebase that touches the file,
+  compare it with the branch you merged (`git show <other>:.beads/issues.jsonl`)
+  before trusting `bd ready`.
 - **Bringing the database up to date with the file.** Locally, the global git hooks run
   `~/code/common/bin/bd-import-newer` after merges, rebases and branch checkouts. It
   imports only rows that are missing or newer in the file. Run it by hand if you pulled
