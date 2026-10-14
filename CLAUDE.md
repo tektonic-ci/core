@@ -39,36 +39,24 @@ Two things worth knowing:
 
 - **`.beads/issues.jsonl` is the interchange format.** The Dolt database itself is
   gitignored, so a cloud session only sees issues that have been exported and
-  committed. Run `bd export -o .beads/issues.jsonl` and commit it alongside your work,
-  the way ocidex does.
-- **A stale branch WILL clobber the issue graph, and nothing stops it today.** `bd import`
-  is upsert, but `git merge` is not: merging a branch whose JSONL predates other issue
-  activity overwrites the file wholesale, and the closures and issues it never knew about
-  are simply gone. This is not hypothetical — commit `287b508` did exactly that, reverting
-  four closures and dropping three issues from main, and the next cloud session rebuilt
-  its database from the damaged file and offered shipped work as `bd ready`.
-  `.gitattributes` declares `merge=beads` for the file, but that driver is **not
-  configured** (`git config merge.beads.driver` is unset, and the installed bd has no
-  `bd merge` command), and `bd hooks list` reports every hook uninstalled, so the
-  pre-commit export and post-merge import never run either. Until tektonic-1cz fixes
-  that: after any merge or rebase that touches `.beads/issues.jsonl`, check the file
-  against the branch you merged (`git show <other>:.beads/issues.jsonl`) before trusting
-  `bd ready`, and re-import anything the merge dropped.
-- **The database can also be stale with no merge involved, so check it at session start.**
-  A cloud container once came up with a database *behind* the committed JSONL: `bd list`
-  showed every child of an epic open and had never heard of four issues the file carried,
-  and `bd ready` offered work that shipped weeks earlier. Nothing warns you, and
-  `bd doctor` does not compare the two. Treat the committed file as the source of truth
-  and reconcile before trusting `bd ready`:
-
-  ```bash
-  bd import .beads/issues.jsonl     # upsert; prints what it changed
-  ```
-
-  Do this **before** claiming anything. `bd import` skips rows the local database has a
-  *newer* copy of — it says so only as a passing `(1 stale skipped)` — so if you have
-  already touched an issue this session, that row stays wrong. `bd import --allow-stale`
-  restores it from the file.
+  committed. bd auto-exports after each write; commit the file alongside your work.
+  The setup is the same in every repo and is documented in the planning hub
+  (`~/code/common/CLAUDE.md`).
+- **Merges of the file are row-level on the maintainer's machine, line-level elsewhere.**
+  `.gitattributes` routes it to `merge=beads`, and locally that driver is
+  `~/code/common/bin/bd-jsonl-merge`: per issue, the newer `updated_at` wins. A cloud
+  container has no such driver configured, so git falls back to a line merge there.
+  Commit `287b508` shows what a careless merge does: it reverted four closures and
+  dropped three issues from main. In a cloud session, after any merge or rebase that
+  touches the file, compare it with the branch you merged
+  (`git show <other>:.beads/issues.jsonl`) before trusting `bd ready`.
+- **Bringing the database up to date with the file.** Locally, the global git hooks run
+  `~/code/common/bin/bd-import-newer` after merges, rebases and branch checkouts. It
+  imports only rows that are missing or newer in the file. Run it by hand if you pulled
+  some other way. **Don't reach for plain `bd import`:** in bd 1.0.3 it overwrites rows
+  without comparing timestamps, so an older file silently reverts newer local edits
+  (verified 2026-10-13; no "stale skipped" check exists). In a fresh cloud container the
+  database is rebuilt from the file by the hook above, so it starts in sync.
 - **Never run a bare `bd init` in a checkout that already has beads.** It rewrites
   `CLAUDE.md`, `AGENTS.md`, `.claude/settings.json` and the git hooks, and commits the
   result. The hook uses `--skip-agents --skip-hooks --from-jsonl` and reverts the
