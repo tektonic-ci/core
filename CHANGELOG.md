@@ -7,7 +7,31 @@ release from their own repos and log changes there:
 [cache-gcs](https://github.com/tektonic-ci/cache-gcs/blob/main/CHANGELOG.md). This file starts
 at the first change after 2.0.0; earlier history is in the git log.
 
-## Unreleased  ## 2.2.0
+## 2.3.0
+
+### Fixed: a `TAG` rule's `branch` filters the tag name
+
+PAC reports a tag push's `target_branch` as `refs/tags/<name>`. A `TAG` rule's `branch` used to
+be dropped on the discrete path, which emitted `on-target-branch: [refs/tags/*]` so the rule fired
+on every tag, and on the CEL path it was compared bare, so it never matched. Both paths now
+prefix the glob with `refs/tags/`: `{ on: TAG, branch: "v*" }` matches `refs/tags/v*`, a glob
+already starting `refs/tags/` is used as-is, and a `TAG` rule with no `branch` still fires on
+every tag. A single rule mixing `TAG` with another event now compiles to CEL, because one
+`on-target-branch` list cannot hold both a tag ref and a branch: `[TAG, PULL_REQUEST]` used to
+never fire on PRs, and `[PUSH, TAG]` never on branches. Re-synthesize and commit: the annotations
+of affected pipelines change. (tektonic-j8s)
+
+### Added: `warmCache`, one producer and many consumers of a shared-workspace cache
+
+`warmCache(spec)` returns a `.producer` spec for the task that warms a cache and
+`.consumer({ forceSave? })` specs for the tasks that reuse it on the same workspace. Consumers
+skip the restore when the paths already exist, replacing the per-task specs consumers used to
+derive by hand. Synthesis fails when a consumer's producer is missing, declared twice, or not in
+the consumer's transitive `needs`, which is the ordering the skipped restore depends on. Additive:
+existing cache specs behave as before. See caching.md, "One producer, many consumers".
+(tektonic-ltm)
+
+## 2.2.0
 
 ### Changed: this repo holds core only
 
