@@ -96,6 +96,9 @@ const userStep = (name: string): TaskStepSpec => ({ name, image: 'docker.io/libr
  *   context, and core can wire it ahead of every reporting task.
  * - `finalStep` is a valid step, named apart from the step names projects commonly use,
  *   and it synthesizes as the task's last step.
+ * - `startStep`, if implemented, is a valid step named apart from those and from the final
+ *   step, and synthesizes as the task's first step with `onError: 'continue'`. Without it,
+ *   a reporting task starts with its own first step.
  * - `requiredParams` reach every reporting task.
  * - A reconciler, if implemented, is named as asked, lands in `finally`, and reads
  *   `$(tasks.<name>.status)` for every reporting task.
@@ -161,6 +164,29 @@ export function assertStatusReporterConformance(
   }
   checks.push('finalStep is deterministic');
 
+  // The start step, standalone, if the reporter has one. Same naming rules as the final
+  // step, and apart from it too: both land in every reporting task.
+  const start = reporter.startStep
+    ? checkStep(kind, 'startStep', during(kind, 'startStep threw', () => reporter.startStep!('conformance/build')))
+    : undefined;
+  if (start) {
+    if (userSteps.includes(start.name)) {
+      fail(
+        kind,
+        'startStep may collide with a user step',
+        `its step is named '${start.name}', a name projects commonly give their own steps, and a ` +
+          `task with a step of that name would fail to synthesize.`,
+      );
+    }
+    if (start.name === final.name) {
+      fail(kind, 'startStep collides with finalStep', `both are named '${start.name}'`);
+    }
+    if (!sameJson(start, reporter.startStep!('conformance/build'))) {
+      fail(kind, 'startStep is not deterministic', 'two calls with the same argument differ, so `tektonic check` would always report drift');
+    }
+    checks.push('startStep is a valid, deterministic step, named apart from the user and final steps');
+  }
+
   if (reporter.pendingGroupKey) {
     const key = reporter.pendingGroupKey();
     if (typeof key !== 'string') fail(kind, 'pendingGroupKey', `must return a string, got ${typeof key}`);
@@ -220,6 +246,23 @@ export function assertStatusReporterConformance(
     }
   }
   checks.push('final step runs last and requiredParams reach every reporting task');
+
+  for (const [name, own] of [['build', 'compile'], ['test', 'unit']]) {
+    const t = tasks[name];
+    if (!start) {
+      if (t.stepNames[0] !== own) fail(kind, `'${name}' gained a step ahead of its own`, `steps: ${t.stepNames.join(', ')}`);
+      continue;
+    }
+    if (t.stepNames[0] !== start.name) {
+      fail(kind, `start step is not first in '${name}'`, `steps: ${t.stepNames.join(', ')}`);
+    }
+    if (t.step(start.name).onError !== 'continue') {
+      fail(kind, `start step in '${name}' can fail the task`, `onError is ${JSON.stringify(t.step(start.name).onError)}`);
+    }
+  }
+  checks.push(start
+    ? 'start step runs first and never fails the task'
+    : 'no start step is emitted for a reporter without one');
 
   const reconcile = reporter.createStatusReconcilerTask ?? reporter.createSkipResolverTask;
   if (reconcile) {

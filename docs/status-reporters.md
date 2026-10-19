@@ -25,6 +25,7 @@ interface StatusReporter {
   readonly requiredParams: Param[];
   createPendingTask(contexts: string[], name?: string): Task;
   finalStep(context: string, userStepNames?: string[]): TaskStepSpec;
+  startStep?(context: string): TaskStepSpec;
   createStatusReconcilerTask?(entries: { taskName: string; context: string }[], name?: string): Task;
   /** @deprecated — implement createStatusReconcilerTask instead. */
   createSkipResolverTask?(entries: { taskName: string; context: string }[], name?: string): Task;
@@ -32,7 +33,7 @@ interface StatusReporter {
 }
 ```
 
-Three of the six members are optional, and which one a pipeline calls is feature-detected, so
+Four of the seven members are optional, and which one a pipeline calls is feature-detected, so
 the full method set is worth spelling out.
 
 ### `requiredParams`
@@ -78,6 +79,19 @@ Injected cache restore/save steps are deliberately **not** in `userStepNames`: t
 Whether the step re-exits that code — turning a red status into a failed `TaskRun` — is the
 reporter's choice. The GitHub reporter does by default and takes `failOnError: false` to opt
 out.
+
+### `startStep(context)`
+
+Optional. The step prepended as the **first** step of each reporting task, ahead of the
+injected cache restore steps, to report the context as running. Without it a context reads
+"pending" from the moment the pending task posts it until `finalStep` reports the result,
+including the time the task spends waiting on `runAfter` or for a node. With it, "pending"
+means queued and the start step marks when the pod actually began.
+
+`TaskDef.synth` renders it with `onError: 'continue'` whatever the step sets, so a failed
+POST never fails the task. It runs outside the exit-code contract and is not one of the
+`userStepNames` handed to `finalStep`. Name it apart from `finalStep`'s step: synthesis
+fails if the two share a name.
 
 ### `createStatusReconcilerTask(entries, name)`
 

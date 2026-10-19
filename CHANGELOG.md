@@ -7,6 +7,19 @@ release from their own repos and log changes there:
 [cache-gcs](https://github.com/tektonic-ci/cache-gcs/blob/main/CHANGELOG.md). This file starts
 at the first change after 2.0.0; earlier history is in the git log.
 
+## Unreleased
+
+### Added: optional `StatusReporter.startStep`, reporting when a task actually starts
+
+A reporter that implements `startStep(context)` gets that step prepended to every reporting
+task, ahead of the cache restore steps, so a context can move from "pending" to "running" when
+its pod starts rather than reading as running from the moment the PipelineRun begins. Core
+always renders it with `onError: 'continue'`, so a failed report never fails the task, and it
+is not among the step names handed to `finalStep`. Reporters without it emit exactly what they
+did before. `assertStatusReporterConformance` checks the start step is valid, deterministic,
+named apart from the user and final steps, first in each reporting task and non-fatal, and that
+no start step appears for a reporter without one. (tektonic-aat)
+
 ## 2.3.0
 
 ### Fixed: a `TAG` rule's `branch` filters the tag name

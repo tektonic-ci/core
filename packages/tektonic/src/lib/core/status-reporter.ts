@@ -44,6 +44,20 @@ export interface StatusReporter {
   finalStep(context: string, userStepNames?: string[]): TaskStepSpec;
 
   /**
+   * Returns a step that reports the given context as started — the task's pod is
+   * scheduled and running, as opposed to the "pending" {@link createPendingTask} set while
+   * it still waited on `runAfter` or a node.
+   *
+   * `TaskDef.synth` prepends this as the task's first step, ahead of the injected cache
+   * restore steps, and always renders it with `onError: 'continue'`: a failed report must
+   * never fail the task. It is not one of the user steps handed to {@link finalStep}.
+   *
+   * Optional: a reporter that does not implement it gets no start step, and its contexts
+   * stay "pending" until {@link finalStep} reports the result.
+   */
+  startStep?(context: string): TaskStepSpec;
+
+  /**
    * Returns a Task (for the pipeline's `finally` block) that reconciles any context left on
    * "pending" after the DAG settles. One step per entry, checking Tekton's
    * `$(tasks.<taskName>.status)`:
