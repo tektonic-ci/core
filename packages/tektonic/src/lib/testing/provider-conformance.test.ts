@@ -4,7 +4,7 @@ import {
   assertCacheBackendConformance,
   assertArtifactStoreConformance,
 } from './provider-conformance';
-import { TestStatusReporter } from '../../__fixtures__/reporter';
+import { StartingStatusReporter, TestStatusReporter } from '../../__fixtures__/reporter';
 import { PvcBackend } from '../cache/pvc-backend';
 import { WorkspaceArtifactStore } from '../core/artifact';
 import type { TaskArtifact } from '../core/artifact';
@@ -19,6 +19,50 @@ describe('assertStatusReporterConformance', () => {
     const r = assertStatusReporterConformance(() => new TestStatusReporter(), withNushell);
     expect(r.checks).toContain('one pending task, ahead of every reporting task');
     expect(r.checks).toContain("reconciler lands in finally and reads every reporting task's status");
+  });
+
+  it('checks that no start step appears for a reporter without one', () => {
+    const r = assertStatusReporterConformance(() => new TestStatusReporter(), withNushell);
+    expect(r.checks).toContain('no start step is emitted for a reporter without one');
+  });
+
+  it('passes a reporter with a start step', () => {
+    const r = assertStatusReporterConformance(() => new StartingStatusReporter(), withNushell);
+    expect(r.checks).toContain('start step runs first and never fails the task');
+  });
+
+  it('fails a start step that takes a common step name', () => {
+    class Named extends StartingStatusReporter {
+      override startStep(context: string): TaskStepSpec {
+        return { ...super.startStep(context), name: 'build' };
+      }
+    }
+    expect(() => assertStatusReporterConformance(() => new Named(), withNushell)).toThrow(
+      /startStep may collide with a user step/,
+    );
+  });
+
+  it('fails a start step named like the final step', () => {
+    class Same extends StartingStatusReporter {
+      override startStep(context: string): TaskStepSpec {
+        return { ...super.startStep(context), name: 'report-status' };
+      }
+    }
+    expect(() => assertStatusReporterConformance(() => new Same(), withNushell)).toThrow(
+      /startStep collides with finalStep/,
+    );
+  });
+
+  it('fails a non-deterministic start step', () => {
+    let n = 0;
+    class Drifting extends StartingStatusReporter {
+      override startStep(context: string): TaskStepSpec {
+        return { ...super.startStep(context), env: [{ name: 'N', value: String(n++) }] };
+      }
+    }
+    expect(() => assertStatusReporterConformance(() => new Drifting(), withNushell)).toThrow(
+      /startStep is not deterministic/,
+    );
   });
 
   it('surfaces a capability the project image must provide', () => {

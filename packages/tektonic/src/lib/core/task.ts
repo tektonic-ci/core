@@ -375,7 +375,8 @@ export interface TaskOptions<AN extends string = never> {
     /**
      * Status context string reported to the external system (e.g. `"ci/test"`).
      * When set together with `statusReporter`, the reporter's `finalStep` is
-     * automatically appended to this task's steps at synthesis time.
+     * automatically appended to this task's steps at synthesis time, and its optional
+     * `startStep`, if implemented, is prepended.
      */
     statusContext?: string;
     /** Reporter used to generate the final-status step for this task. */
@@ -823,6 +824,12 @@ export class TaskDef<AN extends string = never> implements TaskLike {
                 );
             }
         }
+        // The start step reports the pod as running, so it goes ahead of everything else,
+        // cache restore included. Like the cache steps it is outside the exit-code contract.
+        const startStep =
+            this.statusReporter?.startStep && this.statusContext
+                ? [this.statusReporter.startStep(this.statusContext)]
+                : [];
         // Only the user steps' names are handed to the reporter. The cache restore/save
         // steps also run with onError:'continue', so Tekton records exit codes for them
         // too — but a failed cache save must stay non-fatal, so they are excluded.
@@ -847,7 +854,13 @@ export class TaskDef<AN extends string = never> implements TaskLike {
             ...provenanceStep,
             ...saveSteps,
         ].map((s) => s.name);
-        for (const s of reporterStep) {
+        if (startStep.length > 0 && reporterStep.length > 0 && startStep[0].name === reporterStep[0].name) {
+            throw new Error(
+                `Task '${this.name}': status reporter start step and final step are both named ` +
+                    `'${startStep[0].name}' — the reporter must name them apart`,
+            );
+        }
+        for (const s of [...startStep, ...reporterStep]) {
             if (takenStepNames.includes(s.name)) {
                 throw new Error(
                     `Task '${this.name}': status reporter step '${s.name}' collides with a step of ` +
@@ -914,6 +927,8 @@ export class TaskDef<AN extends string = never> implements TaskLike {
             : [];
 
         const steps = [
+            // onError is forced rather than defaulted: a failed start report never fails the task.
+            ...startStep.map((s) => renderStep({ ...s, onError: "continue" }, libCtx, false)),
             ...restoreSteps.map((s) => renderStep(s, libCtx, false)),
             ...fetchSteps.map((s) => renderStep(s, userCtx, reporting)),
             ...this.steps.map((s) => renderStep(s, userCtx, reporting)),

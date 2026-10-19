@@ -1352,6 +1352,7 @@ declare function stagedExtract(c: TaskCacheSpec, label: string, extract: string)
 interface StatusReporter {
     createPendingTask(contexts: string[], name?: string): Task;
     finalStep(context: string, userStepNames?: string[]): TaskStepSpec;
+    startStep?(context: string): TaskStepSpec;
     createStatusReconcilerTask?(entries: {
         taskName: string;
         context: string;

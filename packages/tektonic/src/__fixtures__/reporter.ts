@@ -94,3 +94,17 @@ export class TestStatusReporter implements StatusReporter {
     return new Script(languageFor('nushell'), text);
   }
 }
+
+/**
+ * A {@link TestStatusReporter} that also implements the optional
+ * {@link StatusReporter.startStep}, reporting a context as running once its pod starts.
+ */
+export class StartingStatusReporter extends TestStatusReporter {
+  startStep(context: string): TaskStepSpec {
+    return {
+      name: 'report-start',
+      image: injectedImageRef('nushell'),
+      script: new Script(languageFor('nushell'), `log "start ${context}"`),
+    };
+  }
+}

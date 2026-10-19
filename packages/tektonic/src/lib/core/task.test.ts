@@ -1,13 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { App, Chart } from 'cdk8s';
 import { Task } from './task';
+import type { TaskStepSpec } from './task';
 import { Param } from './param';
 import { Workspace } from './workspace';
 import { Result } from './result';
 import { HubTaskRef } from './hub-task-ref';
 import { RESTRICTED_STEP_SECURITY_CONTEXT, DEFAULT_STEP_RESOURCES } from '../constants';
 import { DEFAULT_INJECTED_STEP_IMAGE } from './injected-image';
-import { TestStatusReporter } from '../../__fixtures__/reporter';
+import { StartingStatusReporter, TestStatusReporter } from '../../__fixtures__/reporter';
 import { nu, sh, EXIT_CODE_PATH } from '../script';
 import { onBranch } from './condition';
 
@@ -1271,6 +1272,77 @@ describe('Task', () => {
         steps: [{ name: 'report-status', image: 'alpine', script: nu`log "hi"` }],
       });
       expect(synthSteps(t).map((s) => s.name)).toEqual(['report-status']);
+    });
+
+    describe('startStep', () => {
+      const cacheWs = new Workspace({ name: 'npm-cache' });
+      const cached = (reporter: TestStatusReporter, extra: Record<string, unknown> = {}) =>
+        new Task({
+          name: 'fmt',
+          statusReporter: reporter,
+          caches: [{ name: 'npm', key: ['package-lock.json'], paths: ['node_modules'], workspace: cacheWs }],
+          steps: [{ name: 'fmt', image: 'alpine', script: nu`log "hi"` }],
+          ...extra,
+        });
+
+      it('prepends the start step ahead of cache restore, with onError continue', () => {
+        const steps = synthSteps(cached(new StartingStatusReporter()));
+        expect(steps.map((s) => s.name)).toEqual([
+          'report-start',
+          'restore-npm-cache',
+          'fmt',
+          'save-npm-cache',
+          'report-status',
+        ]);
+        expect(steps[0].onError).toBe('continue');
+        expect(steps[0].script).toContain('start fmt');
+        expect(steps[0].script).not.toContain(EXIT_CODE_PATH);
+      });
+
+      it('forces onError continue over the step the reporter returns', () => {
+        class Strict extends StartingStatusReporter {
+          override startStep(context: string): TaskStepSpec {
+            return { ...super.startStep(context), onError: 'stopAndFail' };
+          }
+        }
+        expect(synthSteps(cached(new Strict()))[0].onError).toBe('continue');
+      });
+
+      it('leaves the start step out of the names handed to finalStep', () => {
+        const report = synthSteps(cached(new StartingStatusReporter())).find((s) => s.name === 'report-status')!;
+        expect(report.script).not.toContain('step-report-start');
+        expect(report.script).toContain('step-fmt');
+      });
+
+      it('emits no start step for a reporter without one', () => {
+        const names = synthSteps(cached(new TestStatusReporter())).map((s) => s.name);
+        expect(names[0]).toBe('restore-npm-cache');
+      });
+
+      it('emits no start step when the task does not report', () => {
+        const t = new Task({ name: 'fmt', steps: [{ name: 'fmt', image: 'alpine', script: nu`log "hi"` }] });
+        expect(synthSteps(t).map((s) => s.name)).toEqual(['fmt']);
+      });
+
+      it("rejects a user step that takes the start step's name", () => {
+        const t = new Task({
+          name: 'fmt',
+          statusReporter: new StartingStatusReporter(),
+          steps: [{ name: 'report-start', image: 'alpine', script: nu`log "hi"` }],
+        });
+        expect(() => synthSteps(t)).toThrow(
+          /Task 'fmt': status reporter step 'report-start' collides with a step of the same name/,
+        );
+      });
+
+      it('rejects a start step named like the final step', () => {
+        class Same extends StartingStatusReporter {
+          override startStep(context: string): TaskStepSpec {
+            return { ...super.startStep(context), name: 'report-status' };
+          }
+        }
+        expect(() => synthSteps(cached(new Same()))).toThrow(/start step and final step are both named 'report-status'/);
+      });
     });
 
     it('labels each user step with its own task/step name', () => {

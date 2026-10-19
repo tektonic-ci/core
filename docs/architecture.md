@@ -315,7 +315,9 @@ and `/tekton/steps/step-<name>/exitCode` for each named user step, which Tekton'
 writes. The second source exists because the first is written *by the wrapped script*, so a body
 calling nushell's untrappable `exit` terminates before the wrapper can persist anything and
 leaves a stale `0`. Only the user steps are consulted — the injected cache steps also run with
-`onError: 'continue'`, but a failed cache save must stay non-fatal. There is no in-core
+`onError: 'continue'`, but a failed cache save must stay non-fatal. An optional
+`startStep(context)` is prepended ahead of cache restore to report the pod as running; core
+forces it to `onError: 'continue'` and keeps it out of the exit-code contract. There is no in-core
 reporter: `GitHubStatusReporter` ships in `@tektonic-ci/reporter-github`, and core's own
 tests use a fixture implementation of the interface (`src/__fixtures__/reporter.ts`) so what
 they assert is the contract rather than GitHub's wire format. The optional
