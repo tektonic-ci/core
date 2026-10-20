@@ -7,7 +7,7 @@ release from their own repos and log changes there:
 [cache-gcs](https://github.com/tektonic-ci/cache-gcs/blob/main/CHANGELOG.md). This file starts
 at the first change after 2.0.0; earlier history is in the git log.
 
-## Unreleased
+## 2.4.0
 
 ### Added: optional `StatusReporter.startStep`, reporting when a task actually starts
 
