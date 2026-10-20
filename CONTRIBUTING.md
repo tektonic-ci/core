@@ -210,23 +210,29 @@ The registry is the channel; the git ref is not, and the README says so.
    The workflow refuses to stage when the tag does not match the package version, re-runs
    `npm test` and `npm run build`, and stages the package unless that version is already on the
    registry.
-3. Approve the stage with your passkey. `npm stage` needs npm 11.19 or later; the flox
-   environment's npm has it, so run this inside `flox activate`. The stage id is on the
-   "staged with id" line of the workflow log, or:
+3. Approve the stage with your passkey, and move `next` up to the release in the same
+   command. `npm stage` needs npm 11.19 or later; the flox environment's npm has it, so run
+   this inside `flox activate`. The stage id is on the "staged with id" line of the workflow
+   log, or:
 
    ```bash
    npm stage list @tektonic-ci/core                  # note the stage id
-   npm stage approve <stage-id> --auth-type=web
+   npm stage approve <stage-id> --auth-type=web \
+     && npm dist-tag add @tektonic-ci/core@X.Y.Z next
    ```
+
+   The workflow can't move `next` itself: its OIDC credential only stages, and the version
+   isn't on the registry until you approve it. Provider CI tests the newer of `next` and
+   `latest` (see [docs/testing.md](docs/testing.md#running-it-against-the-next-core)), so a
+   missed move no longer leaves it testing an old core, but keep `next` current for anyone
+   installing `@next` directly.
 
    `npm stage download <stage-id>` fetches the tarball if you want to inspect it first, and
    `npm stage reject <stage-id>` discards one. Re-running the workflow before approving stages
    the package again — reject the duplicate.
 
-4. Check the release: `npm view @tektonic-ci/core@X.Y.Z gitHead` must be the tagged commit.
-5. Move `next` up to the release: `npm dist-tag add @tektonic-ci/core@X.Y.Z next`. Provider CI
-   tests against `@tektonic-ci/core@next`, and npm moves that tag only when a prerelease is
-   published. Skip this step and, after 3.0.0 ships, providers keep testing `3.0.0-next.2`.
+4. Check the release: `npm view @tektonic-ci/core@X.Y.Z gitHead` must be the tagged commit,
+   and `npm view @tektonic-ci/core dist-tags` must show `next` and `latest` both at `X.Y.Z`.
 
 ### Cutting a prerelease
 
@@ -241,7 +247,8 @@ that changes what synthesis emits, and before every major.
 2. Tag the merged commit `vX.Y.Z-next.N` and push the tag. The workflow sees the `-` in the
    version and stages the package on the `next` dist-tag instead of `latest`, so a plain
    `npm install @tektonic-ci/core` never picks it up.
-3. Approve the stage as for a release, then check `npm view @tektonic-ci/core dist-tags`: `next`
+3. Approve the stage as for a release, without the `dist-tag add` (the prerelease is already on
+   `next`), then check `npm view @tektonic-ci/core dist-tags`: `next`
    is the prerelease, and `latest` hasn't moved.
 
 A staged version's dist-tag is fixed when it is staged, so a prerelease tagged wrongly has to be

@@ -148,18 +148,32 @@ the script it runs, and the API it calls.
 
 A test run against the core release you already depend on only tells you the provider works
 with that release. To find out whether the **next** one breaks it, add a CI job that installs
-core's prerelease channel over your locked version and runs the same tests:
+the newer of core's `next` and `latest` over your locked version and runs the same tests:
 
 ```bash
 npm ci
-npm install --no-save @tektonic-ci/core@next
+next=$(npm view @tektonic-ci/core@next version)
+latest=$(npm view @tektonic-ci/core@latest version)
+core=$(node -e '
+  const key = (v) => { const [rel, pre] = v.split("-"); return [...rel.split(".").map(Number), pre === undefined ? 1 : 0]; };
+  const [a, b] = process.argv.slice(1);
+  const [ka, kb] = [key(a), key(b)];
+  const i = ka.findIndex((x, j) => x !== kb[j]);
+  console.log(i === -1 || ka[i] > kb[i] ? a : b);
+' "$next" "$latest")
+echo "core@next is $next, core@latest is $latest: testing $core"
+npm install --no-save "@tektonic-ci/core@$core"
+npm ls @tektonic-ci/core
 npm test
 ```
 
 Core publishes prereleases (`3.0.0-next.0` and so on) on the npm `next` dist-tag before the
-release reaches `latest`, so this job fails while the change can still be fixed. Every release
-also moves `next` to itself, so `next` is never behind `latest`, and between prereleases the job
-tests the current release. The kit knows nothing about any provider: yours runs it in your CI, and
+release reaches `latest`, so this job fails while the change can still be fixed. npm moves `next`
+only when a prerelease is published. The release steps move it up to each release by hand, but
+a missed step leaves `next` behind `latest`, and a job installing `@next` alone then tests a core
+older than your lock file: `npm ls` rejects it once your dev range moves past it. Taking the
+newer of the two keeps the job on the upcoming core, and between prereleases on the current
+release. The kit knows nothing about any provider: yours runs it in your CI, and
 core never needs a list of who is out there.
 
 Keep the job advisory, so a red `next` build doesn't block your own releases. `npm install
