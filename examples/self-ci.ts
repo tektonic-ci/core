@@ -11,7 +11,7 @@ import {
 } from "../packages/tektonic/dist/index.js";
 // The GitHub reporter is a separate package: this file consumes it exactly as any other
 // project does, through its own package root.
-import { GitHubStatusReporter } from "@tektonic-ci/reporter-github";
+import { GitHubStatusReporter, tektonDashboardUrl } from "@tektonic-ci/reporter-github";
 
 // ─── Images ──────────────────────────────────────────────────────────────────
 const nodeImage = "ghcr.io/pfenerty/apko-cicd/nodejs:24";
@@ -25,8 +25,11 @@ const sourceBranchParam = PAC_PARAMS.sourceBranch;
 
 // ─── Status reporter ─────────────────────────────────────────────────────────
 // Under PAC, reuse the git-auth token via the pod env (see podTemplateEnv below)
-// instead of injecting a separate github-token secret per step.
-const statusReporter = new GitHubStatusReporter({ skipTokenInjection: true });
+// instead of injecting a separate github-token secret per step. Each commit status links
+// to its TaskRun (pending and reconciled ones to the PipelineRun) on the tailnet-only
+// Tekton Dashboard that homelab runs.
+const detailsUrl = tektonDashboardUrl("https://tekton-dashboard.bear-velociraptor.ts.net");
+const statusReporter = new GitHubStatusReporter({ skipTokenInjection: true, detailsUrl });
 
 // ─── Cache workspace ────────────────────────────────────────────────────────
 // CI runs on the homelab Talos cluster, so caches use the default PVC backend. Every cache
