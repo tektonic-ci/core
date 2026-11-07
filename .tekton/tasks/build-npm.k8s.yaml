@@ -82,7 +82,9 @@ spec:
           } catch { |e|
             rm -rf $stage
             log $"restore-npm-cache: extract failed \(($e.msg)\)"
-            exit 1
+            rm -f $archive
+            log $"restore-npm-cache: removed unextractable archive, treating as a miss ($hash)"
+            exit 0
           }
           for p in ["node_modules"] {
             let staged = ($stage | path join $p)

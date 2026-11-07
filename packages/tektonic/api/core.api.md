@@ -1343,7 +1343,7 @@ declare class Sh implements ScriptLanguage {
 ## stagedExtract
 
 ```ts
-declare function stagedExtract(c: TaskCacheSpec, label: string, extract: string): string;
+declare function stagedExtract(c: TaskCacheSpec, label: string, extract: string, onFailure?: string): string;
 ```
 
 ## StatusReporter

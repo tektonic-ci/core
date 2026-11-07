@@ -68,6 +68,31 @@ describe('cache restore on a shared workspace', () => {
 
 });
 
+describe('compressed restore of an unextractable archive', () => {
+  // Save skips a hash whose archive already exists, so an archive that cannot be extracted
+  // (truncated, corrupt, or holding read-only dirs tar cannot recreate) used to fail every
+  // run until someone deleted it by hand. Restore now drops it and carries on as a miss.
+  const script = () =>
+    restoreScript(
+      new Task({
+        name: 'go-test',
+        workspaces: [source()],
+        steps: [{ name: 's', image: 'go' }],
+        caches: [goCache(source(), store())],
+      }),
+    );
+
+  it('deletes the archive and continues as a miss instead of failing the step', () => {
+    const s = script();
+    const catchBlock = s.slice(s.indexOf('} catch { |e|'), s.indexOf('for p in ['));
+    expect(catchBlock).toContain('rm -rf $stage');
+    expect(catchBlock).toContain('rm -f $archive');
+    expect(catchBlock).toContain('treating as a miss');
+    expect(catchBlock).toContain('exit 0');
+    expect(catchBlock).not.toContain('exit 1');
+  });
+});
+
 describe('shared-workspace cache detection', () => {
   afterEach(() => vi.restoreAllMocks());
 
