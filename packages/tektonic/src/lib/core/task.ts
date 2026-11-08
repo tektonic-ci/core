@@ -505,6 +505,17 @@ export interface TaskOptions<AN extends string = never> {
     catalog?: CatalogMetadata;
 }
 
+const pendingResultBindingsByTask = new WeakMap<object, ReadonlyMap<string, string>>();
+
+/**
+ * @internal Params of a reporting task bound to its pending task's results, param name to
+ * result name, from {@link StatusReporter.pendingTaskResults}. Resolved by `Pipeline`, which
+ * names the pending task. Kept off {@link TaskDef} so the public type does not change.
+ */
+export function pendingResultBindings(task: object): ReadonlyMap<string, string> {
+    return pendingResultBindingsByTask.get(task) ?? new Map();
+}
+
 /**
  * A Tekton Task definition.
  *
@@ -614,6 +625,29 @@ export class TaskDef<AN extends string = never> implements TaskLike {
         const seen = new Map<string, Param>();
         for (const p of [...base, ...actionParams, ...reporterParams]) {
             if (!seen.has(p.name)) seen.set(p.name, p);
+        }
+        // Params bound to the pending task's results. The pipeline that holds this task
+        // names its pending task, so the expression is resolved there; the placeholder
+        // only keeps the param out of pipeline-level inference.
+        const pendingResults = opts.statusReporter?.pendingTaskResults?.(opts.statusContext ?? opts.name) ?? {};
+        const bindings = new Map<string, string>();
+        pendingResultBindingsByTask.set(this, bindings);
+        for (const [paramName, resultName] of Object.entries(pendingResults)) {
+            if (seen.has(paramName)) {
+                throw new Error(
+                    `Task '${this.name}': status reporter binds param '${paramName}' to pending-task ` +
+                        `result '${resultName}', but the task already has a param of that name`,
+                );
+            }
+            seen.set(
+                paramName,
+                new Param({
+                    name: paramName,
+                    type: "string",
+                    pipelineExpression: `$(tasks.<pending>.results.${resultName})`,
+                }),
+            );
+            bindings.set(paramName, resultName);
         }
         this.params = [...seen.values()];
         this.workspaces = mergeByName([

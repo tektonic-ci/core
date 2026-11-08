@@ -1,6 +1,6 @@
 import { Param } from './param';
 import { Workspace } from './workspace';
-import { Task, TaskLike, TaskDef } from './task';
+import { Task, TaskLike, TaskDef, pendingResultBindings } from './task';
 import type { StatusReporter } from './status-reporter';
 import { TRIGGER_EVENTS } from './trigger-events';
 import { triggerEvents } from './trigger';
@@ -150,6 +150,7 @@ export class Pipeline {
         );
         for (const member of members) this._pendingTasks.set(member, pending);
         pendingTasks.push(pending);
+        this.validatePendingResults(pending, tasks);
 
         // A reporting task's own report-status step is its last step, so anything that stops
         // the task from reaching it leaves the context stuck on "pending" from the task
@@ -159,7 +160,11 @@ export class Pipeline {
         // the whole DAG.
         const reconcile = (reporter.createStatusReconcilerTask ?? reporter.createSkipResolverTask)?.bind(reporter);
         if (reconcile) {
-          const entries = tasks.map(t => ({ taskName: t.name, context: t.statusContext! }));
+          const entries = tasks.map(t => ({
+            taskName: t.name,
+            context: t.statusContext!,
+            pendingTaskName: pending.name,
+          }));
           (this.finallyTasks as TaskLike[]).push(
             reconcile(entries, `reconcile-status-${this.name}${suffix}`),
           );
@@ -409,9 +414,44 @@ export class Pipeline {
     return overrides?.when !== undefined ? overrides.when : task.when;
   }
 
+  /**
+   * Fails fast when a reporting task binds a param to a result its pending task does not
+   * declare — Tekton would otherwise reject the PipelineRun only once it is applied.
+   */
+  private validatePendingResults(pending: TaskDef, tasks: TaskDef[]): void {
+    const declared = new Set(pending.results.map(r => r.name));
+    for (const task of tasks) {
+      for (const [param, result] of pendingResultBindings(task)) {
+        if (!declared.has(result)) {
+          throw new Error(
+            `Pipeline '${this.name}': task '${task.name}' binds param '${param}' to result ` +
+              `'${result}' of pending task '${pending.name}', which does not declare it`,
+          );
+        }
+      }
+    }
+  }
+
+  /**
+   * Points a reporting task's pending-result params at this pipeline's pending task for its
+   * reporter, whose name differs between pipelines sharing the task.
+   */
+  private bindPendingResults(task: TaskLike, spec: Record<string, unknown>): void {
+    if (!(task instanceof TaskDef)) return;
+    const bindings = pendingResultBindings(task);
+    if (bindings.size === 0) return;
+    const pending = task.statusReporter && this._pendingTasks.get(task.statusReporter);
+    if (!pending || !Array.isArray(spec.params)) return;
+    for (const p of spec.params as { name: string; value: unknown }[]) {
+      const result = bindings.get(p.name);
+      if (result !== undefined) p.value = `$(tasks.${pending.name}.results.${result})`;
+    }
+  }
+
   /** @internal Emits one pipeline task entry, applying any `gated()` overrides for that task. */
   private toPipelineTaskSpec(task: TaskLike, runAfter: string[], namePrefix?: string): Record<string, unknown> {
     const spec = task._toPipelineTaskSpec(runAfter, namePrefix);
+    this.bindPendingResults(task, spec);
     const overrides = this.taskOverrides.get(task);
     return overrides ? applyOverrides(spec, overrides) : spec;
   }

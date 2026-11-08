@@ -2,6 +2,21 @@ import { Task } from './task';
 import type { TaskStepSpec } from './task';
 import { Param } from './param';
 
+/** One reporting task handed to {@link StatusReporter.createStatusReconcilerTask}. */
+export interface StatusReconcilerEntry {
+  /** The reporting task's name in the pipeline, for `$(tasks.<taskName>.status)`. */
+  taskName: string;
+  /** The status context the task reports. */
+  context: string;
+  /**
+   * The name the pipeline gave the pending task that initialised this context, so the
+   * reconciler can bind `$(tasks.<pendingTaskName>.results.<result>)` itself — the
+   * counterpart of {@link StatusReporter.pendingTaskResults} for reporting tasks.
+   * Always set by core; optional only so code that builds entries itself keeps compiling.
+   */
+  pendingTaskName?: string;
+}
+
 /**
  * Provider-agnostic interface for reporting pipeline task statuses to an external system.
  *
@@ -75,14 +90,36 @@ export interface StatusReporter {
    * pipelines simply skip reconciliation when a reporter implements neither this nor the
    * deprecated {@link createSkipResolverTask}.
    */
-  createStatusReconcilerTask?(entries: { taskName: string; context: string }[], name?: string): Task;
+  createStatusReconcilerTask?(entries: StatusReconcilerEntry[], name?: string): Task;
 
   /**
    * @deprecated Implement {@link createStatusReconcilerTask} instead — it covers tasks
    * terminated by the infrastructure as well as skipped ones. Pipelines fall back to this
    * method when a reporter does not implement the newer one.
    */
-  createSkipResolverTask?(entries: { taskName: string; context: string }[], name?: string): Task;
+  createSkipResolverTask?(entries: StatusReconcilerEntry[], name?: string): Task;
+
+  /**
+   * Values a reporting task receives from the results of this reporter's pending task — for
+   * example the ID of an external record {@link createPendingTask} created for the context,
+   * which {@link startStep} and {@link finalStep} then update.
+   *
+   * Returns a map of task param name to pending-task result name. Each param is declared on
+   * the reporting task (type `string`, so steps read it as `$(params.<name>)`), and every
+   * pipeline binds it to `$(tasks.<pending task>.results.<result>)` using the name it gave
+   * that pipeline's pending task — the reporter never needs to know it. The params are not
+   * pipeline params, so they are not inferred onto the pipeline.
+   *
+   * The pending task must declare every named result, or building the pipeline throws, and
+   * must write each one even when reporting fails: Tekton fails a pipeline task whose param
+   * references a result that was never written. A param name that collides with one of the
+   * task's own params is rejected.
+   *
+   * The reconciler gets the same values through {@link StatusReconcilerEntry.pendingTaskName}.
+   *
+   * Optional: without it, a reporting task receives nothing from the pending task.
+   */
+  pendingTaskResults?(context: string): Record<string, string>;
 
   /**
    * Identifies reporters that can share one pending task and one reconciler task. A pipeline
