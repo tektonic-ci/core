@@ -66,9 +66,22 @@ export function hashExpr(c: TaskCacheSpec): string {
  * @param c        the cache spec, for its `paths`
  * @param label    step label used in log lines
  * @param extract  the extraction pipeline; must write into `$stage` (i.e. `tar xf - -C $stage`)
+ * @param onFailure nushell run when extraction fails, after the staging dir is removed and the
+ *                  failure logged. Defaults to `exit 1`. A backend whose save step never replaces
+ *                  an existing archive should drop the archive here and `exit 0`, so a bad one
+ *                  becomes a miss the next save heals rather than a failure on every run.
  */
-export function stagedExtract(c: TaskCacheSpec, label: string, extract: string): string {
+export function stagedExtract(
+    c: TaskCacheSpec,
+    label: string,
+    extract: string,
+    onFailure = "exit 1",
+): string {
     const pathList = c.paths.map((p) => `"${p}"`).join(", ");
+    const failure = onFailure
+        .split("\n")
+        .map((l) => (l.length > 0 ? `  ${l}` : l))
+        .join("\n");
     return `let stage = $".cache-restore-(random uuid)"
 mkdir $stage
 try {
@@ -76,7 +89,7 @@ try {
 } catch { |e|
   rm -rf $stage
   log $"${label}: extract failed \\(($e.msg)\\)"
-  exit 1
+${failure}
 }
 for p in [${pathList}] {
   let staged = ($stage | path join $p)

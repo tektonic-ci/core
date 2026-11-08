@@ -7,6 +7,17 @@ release from their own repos and log changes there:
 [cache-gcs](https://github.com/tektonic-ci/cache-gcs/blob/main/CHANGELOG.md). This file starts
 at the first change after 2.0.0; earlier history is in the git log.
 
+## Unreleased
+
+### Fixed: an unextractable compressed PVC cache archive is a miss, not a failure on every run
+
+The save step skips a hash whose archive already exists, so a compressed PVC archive that
+restore could not extract (truncated, corrupt, or holding entries tar cannot recreate) failed
+the restore step on every run until someone deleted it from the volume. Restore now logs the
+failure, deletes the archive and continues as a miss, so the next save writes a good one.
+`stagedExtract` gains an optional `onFailure` argument (nushell run after the staging dir is
+removed; default `exit 1`, so existing callers such as cache-gcs are unchanged). (tektonic-vvq)
+
 ## 2.4.0
 
 ### Added: optional `StatusReporter.startStep`, reporting when a task actually starts

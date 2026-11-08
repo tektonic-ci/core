@@ -75,6 +75,11 @@ export class PvcBackend implements CacheBackend {
                 c,
                 label,
                 `^zstd -d ${flag} -c $archive | ^tar xf - -C $stage -o --no-same-permissions`,
+                // Save skips a hash whose archive exists, so an unextractable one would fail
+                // every run until removed by hand. Drop it and carry on as a miss instead.
+                `rm -f $archive
+log $"${label}: removed unextractable archive, treating as a miss ($hash)"
+exit 0`,
             )
                 .split("\n")
                 .map((l) => (l.length > 0 ? `  ${l}` : l))

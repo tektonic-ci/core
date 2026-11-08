@@ -83,7 +83,9 @@ spec:
           } catch { |e|
             rm -rf $stage
             log $"restore-grype-db-cache: extract failed \(($e.msg)\)"
-            exit 1
+            rm -f $archive
+            log $"restore-grype-db-cache: removed unextractable archive, treating as a miss ($hash)"
+            exit 0
           }
           for p in ["grype-db"] {
             let staged = ($stage | path join $p)
