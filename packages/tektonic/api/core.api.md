@@ -515,6 +515,12 @@ declare const DEFAULT_POD_SECURITY_CONTEXT: {
 };
 ```
 
+## DEFAULT_STEP_OUTPUT_MAX_BYTES
+
+```ts
+declare const DEFAULT_STEP_OUTPUT_MAX_BYTES: number;
+```
+
 ## DEFAULT_STEP_RESOURCES
 
 ```ts
@@ -898,6 +904,15 @@ interface OnChangesOptions {
 declare const or: (...conditions: Condition[]) => Condition;
 ```
 
+## OutputCapture
+
+```ts
+interface OutputCapture {
+    path: string;
+    maxBytes: number;
+}
+```
+
 ## PAC_ANNOTATION_PREFIX
 
 ```ts
@@ -1265,6 +1280,7 @@ interface ScriptCtx {
     taskName?: string;
     stepName?: string;
     allowExit?: boolean;
+    outputCapture?: OutputCapture;
 }
 ```
 
@@ -1367,6 +1383,7 @@ interface StatusReporter {
     createSkipResolverTask?(entries: StatusReconcilerEntry[], name?: string): Task;
     pendingTaskResults?(context: string): Record<string, string>;
     pendingGroupKey?(): string;
+    readonly captureStepOutput?: StepOutputCapture;
     readonly requiredParams: Param[];
 }
 ```
@@ -1375,6 +1392,20 @@ interface StatusReporter {
 
 ```ts
 declare function stepExitCodePath(stepName: string): string;
+```
+
+## StepOutputCapture
+
+```ts
+interface StepOutputCapture {
+    maxBytes?: number;
+}
+```
+
+## stepOutputPath
+
+```ts
+declare function stepOutputPath(stepName: string): string;
 ```
 
 ## SynthDefaults

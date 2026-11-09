@@ -63,3 +63,91 @@ describe('script runtime contract', () => {
     expect(EXIT_CODE_PATH).toBe('/tekton/home/.exit-code');
   });
 });
+
+/** Runs a wrapper with output capture and returns exit code, log, contract and capture. */
+function runCaptured(
+  lang: ScriptLanguage,
+  interp: string,
+  ext: string,
+  body: string,
+  maxBytes = 4096,
+  allowExit = false,
+) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tek-out-'));
+  const ecPath = path.join(dir, 'exit-code');
+  const outPath = path.join(dir, 'step-output');
+  const file = path.join(dir, `step.${ext}`);
+  fs.writeFileSync(
+    file,
+    lang.wrap(body, {
+      exitCodePath: ecPath,
+      captureExitCode: true,
+      outputCapture: { path: outPath, maxBytes },
+      allowExit,
+    }),
+  );
+  const r = spawnSync(interp, [file], { encoding: 'utf8' });
+  const read = (p: string) => (fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : '<none>');
+  const result = {
+    status: r.status,
+    log: `${r.stdout}${r.stderr}`,
+    contract: read(ecPath).trim(),
+    output: read(outPath),
+    mode: fs.existsSync(outPath) ? fs.statSync(outPath).mode & 0o777 : 0,
+  };
+  fs.rmSync(dir, { recursive: true, force: true });
+  return result;
+}
+
+// Each body writes to stdout and stderr from the interpreter itself and from an
+// external command, then fails — the reporter needs all four, and the step must
+// keep its exit code.
+const outputCases: Array<[string, () => ScriptLanguage, string, string, string]> = [
+  ['sh', () => new Sh(), 'sh', 'sh', 'echo own-out\necho own-err >&2\nsh -c "echo ext-out; echo ext-err >&2"\nexit 3'],
+  ['bash', () => new Bash(), 'bash', 'bash', 'echo own-out\necho own-err >&2\nsh -c "echo ext-out; echo ext-err >&2"\nexit 3'],
+  ['nu', () => new Nushell(), 'nu', 'nu', 'print own-out\nprint -e own-err\n^sh -c "echo ext-out; echo ext-err >&2"\nerror make {msg: "boom"}'],
+  ['python3', () => new Python(), 'python3', 'py', 'print("own-out")\nprint("own-err", file=sys.stderr)\nimport subprocess\nsubprocess.run(["sh", "-c", "echo ext-out; echo ext-err >&2"])\nsys.exit(3)'],
+];
+
+describe('step output capture', () => {
+  for (const [bin, make, interp, ext, body] of outputCases) {
+    it.skipIf(!has(bin))(`${bin} tees combined output to the capture file and keeps the exit code`, () => {
+      const r = runCaptured(make(), interp, ext, body);
+      const code = bin === 'nu' ? 1 : 3;
+      expect(r.status).toBe(code);
+      expect(r.contract).toBe(String(code));
+      for (const line of ['own-out', 'own-err', 'ext-out', 'ext-err']) {
+        expect(r.output).toContain(line);
+        expect(r.log).toContain(line);
+      }
+      expect(r.mode).toBe(0o666);
+    });
+  }
+
+  const longBodies: Array<[string, () => ScriptLanguage, string, string, string]> = [
+    ['sh', () => new Sh(), 'sh', 'sh', 'i=0; while [ $i -lt 200 ]; do echo "line-$i"; i=$((i+1)); done'],
+    ['nu', () => new Nushell(), 'nu', 'nu', '0..199 | each { |i| print $"line-($i)" } | ignore'],
+    ['python3', () => new Python(), 'python3', 'py', 'for i in range(200): print(f"line-{i}")'],
+  ];
+  for (const [bin, make, interp, ext, body] of longBodies) {
+    it.skipIf(!has(bin))(`${bin} keeps only the last maxBytes`, () => {
+      const r = runCaptured(make(), interp, ext, body, 64);
+      expect(r.status).toBe(0);
+      expect(Buffer.byteLength(r.output)).toBe(64);
+      expect(r.output.endsWith('line-199\n')).toBe(true);
+      expect(r.log).toContain('line-0\n');
+    });
+  }
+
+  it.skipIf(!has('nu'))('nu reports a deliberate non-zero exit through the capture', () => {
+    const r = runCaptured(new Nushell(), 'nu', 'nu', 'print bye\nexit 5', 4096, true);
+    expect(r.status).toBe(5);
+    expect(r.output).toContain('bye');
+  });
+
+  it.skipIf(!has('sh'))('sh contains a body exit inside the capture', () => {
+    const r = runCaptured(new Sh(), 'sh', 'sh', 'echo first\nexit 0\necho never');
+    expect(r.status).toBe(0);
+    expect(r.output).toBe('first\n');
+  });
+});

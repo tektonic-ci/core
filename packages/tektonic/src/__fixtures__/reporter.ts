@@ -1,7 +1,7 @@
 import { Param } from '../lib/core/param';
 import { Task } from '../lib/core/task';
 import type { TaskStepSpec } from '../lib/core/task';
-import type { StatusReconcilerEntry, StatusReporter } from '../lib/core/status-reporter';
+import type { StatusReconcilerEntry, StatusReporter, StepOutputCapture } from '../lib/core/status-reporter';
 import { Result } from '../lib/core/result';
 import { injectedImageRef } from '../lib/core/injected-image';
 import { EXIT_CODE_PATH, languageFor, Script, stepExitCodePath } from '../lib/script';
@@ -24,10 +24,14 @@ export class TestStatusReporter implements StatusReporter {
   /** Only changes the final step, so — as in the GitHub reporter — it is not in the group key. */
   readonly failOnError: boolean;
   readonly requiredParams: Param[];
+  readonly captureStepOutput?: StepOutputCapture;
 
-  constructor(opts: { image?: string; failOnError?: boolean } = {}) {
+  constructor(
+    opts: { image?: string; failOnError?: boolean; captureStepOutput?: StepOutputCapture } = {},
+  ) {
     this.image = opts.image ?? injectedImageRef('nushell');
     this.failOnError = opts.failOnError ?? true;
+    this.captureStepOutput = opts.captureStepOutput;
     this.requiredParams = [
       new Param({ name: 'repo-full-name', type: 'string' }),
       new Param({ name: 'revision', type: 'string' }),

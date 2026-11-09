@@ -106,13 +106,13 @@ export {
 } from "./lib/core/catalog";
 export type { CatalogCategory, CatalogMetadata } from "./lib/core/catalog";
 export { TRIGGER_EVENTS } from "./lib/core/trigger-events";
-export type { StatusReporter, StatusReconcilerEntry } from "./lib/core/status-reporter";
+export type { StatusReporter, StatusReconcilerEntry, StepOutputCapture } from "./lib/core/status-reporter";
 
 // Scripting
-export { sh, bash, nu, py, script, Script, fragment, Fragment, embedSh, rawScript, RawScript, unsafeAllowExit, languageFor, dedent, renderScript, Sh, Bash, Nushell, Python, EXIT_CODE_PATH, stepExitCodePath } from "./lib/script";
+export { sh, bash, nu, py, script, Script, fragment, Fragment, embedSh, rawScript, RawScript, unsafeAllowExit, languageFor, dedent, renderScript, Sh, Bash, Nushell, Python, EXIT_CODE_PATH, stepExitCodePath, stepOutputPath, DEFAULT_STEP_OUTPUT_MAX_BYTES } from "./lib/script";
 export { registerLanguage, unregisterLanguage, registeredLanguageNames, registeredExtensions, languageNameForExtension } from "./lib/script";
 export { scriptFromFile, lintCommandForFile, languageNameForFile } from "./lib/script/from-file";
-export type { ScriptLanguage, ScriptCtx, ScriptInput, ScriptObject, ScriptOptions, EmbedShOptions, LanguageName, KnownLanguageName, ScriptTag, RegisterLanguageOptions } from "./lib/script";
+export type { ScriptLanguage, ScriptCtx, OutputCapture, ScriptInput, ScriptObject, ScriptOptions, EmbedShOptions, LanguageName, KnownLanguageName, ScriptTag, RegisterLanguageOptions } from "./lib/script";
 
 // Re-exported from cdk8s / constructs so downstream projects depend only on tektonic
 export { App, Chart, ApiObject } from "cdk8s";
