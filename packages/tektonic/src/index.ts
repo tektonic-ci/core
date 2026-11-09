@@ -106,7 +106,7 @@ export {
 } from "./lib/core/catalog";
 export type { CatalogCategory, CatalogMetadata } from "./lib/core/catalog";
 export { TRIGGER_EVENTS } from "./lib/core/trigger-events";
-export type { StatusReporter } from "./lib/core/status-reporter";
+export type { StatusReporter, StatusReconcilerEntry } from "./lib/core/status-reporter";
 
 // Scripting
 export { sh, bash, nu, py, script, Script, fragment, Fragment, embedSh, rawScript, RawScript, unsafeAllowExit, languageFor, dedent, renderScript, Sh, Bash, Nushell, Python, EXIT_CODE_PATH, stepExitCodePath } from "./lib/script";

@@ -1346,6 +1346,16 @@ declare class Sh implements ScriptLanguage {
 declare function stagedExtract(c: TaskCacheSpec, label: string, extract: string, onFailure?: string): string;
 ```
 
+## StatusReconcilerEntry
+
+```ts
+interface StatusReconcilerEntry {
+    taskName: string;
+    context: string;
+    pendingTaskName?: string;
+}
+```
+
 ## StatusReporter
 
 ```ts
@@ -1353,14 +1363,9 @@ interface StatusReporter {
     createPendingTask(contexts: string[], name?: string): Task;
     finalStep(context: string, userStepNames?: string[]): TaskStepSpec;
     startStep?(context: string): TaskStepSpec;
-    createStatusReconcilerTask?(entries: {
-        taskName: string;
-        context: string;
-    }[], name?: string): Task;
-    createSkipResolverTask?(entries: {
-        taskName: string;
-        context: string;
-    }[], name?: string): Task;
+    createStatusReconcilerTask?(entries: StatusReconcilerEntry[], name?: string): Task;
+    createSkipResolverTask?(entries: StatusReconcilerEntry[], name?: string): Task;
+    pendingTaskResults?(context: string): Record<string, string>;
     pendingGroupKey?(): string;
     readonly requiredParams: Param[];
 }

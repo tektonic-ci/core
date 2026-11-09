@@ -9,6 +9,18 @@ at the first change after 2.0.0; earlier history is in the git log.
 
 ## Unreleased
 
+### Added: optional `StatusReporter.pendingTaskResults`, passing pending-task results to reporting tasks
+
+A reporter that implements `pendingTaskResults(context)` returns a map of task param name to
+result name on its pending task. Core declares each param on the reporting task and every
+pipeline binds it to `$(tasks.<pending task>.results.<result>)` under the name that pipeline
+gave its pending task, so a check-runs reporter can create every run up front and hand each
+task its run's ID. `Pipeline` throws if the pending task does not declare a bound result, and
+`Task` if a bound param collides with one of its own. The reconciler's entries gain
+`pendingTaskName` for the same purpose, typed as the newly exported `StatusReconcilerEntry`.
+`assertStatusReporterConformance` checks the bindings when the hook is present. Reporters
+without it are unchanged. (tektonic-36a)
+
 ### Fixed: an unextractable compressed PVC cache archive is a miss, not a failure on every run
 
 The save step skips a hash whose archive already exists, so a compressed PVC archive that

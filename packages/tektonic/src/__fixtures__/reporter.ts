@@ -1,7 +1,8 @@
 import { Param } from '../lib/core/param';
 import { Task } from '../lib/core/task';
 import type { TaskStepSpec } from '../lib/core/task';
-import type { StatusReporter } from '../lib/core/status-reporter';
+import type { StatusReconcilerEntry, StatusReporter } from '../lib/core/status-reporter';
+import { Result } from '../lib/core/result';
 import { injectedImageRef } from '../lib/core/injected-image';
 import { EXIT_CODE_PATH, languageFor, Script, stepExitCodePath } from '../lib/script';
 
@@ -65,7 +66,7 @@ export class TestStatusReporter implements StatusReporter {
   }
 
   createStatusReconcilerTask(
-    entries: { taskName: string; context: string }[],
+    entries: StatusReconcilerEntry[],
     name = 'reconcile-status',
   ): Task {
     return new Task({
@@ -106,5 +107,47 @@ export class StartingStatusReporter extends TestStatusReporter {
       image: injectedImageRef('nushell'),
       script: new Script(languageFor('nushell'), `log "start ${context}"`),
     };
+  }
+}
+
+/**
+ * A {@link TestStatusReporter} whose pending task creates a record per context and hands
+ * each reporting task its record's ID through {@link StatusReporter.pendingTaskResults} —
+ * the shape a check-runs reporter needs. It also records the reconciler entries it was
+ * given, so tests can see what core passed.
+ */
+export class RecordingStatusReporter extends TestStatusReporter {
+  /** Entries from the last {@link createStatusReconcilerTask} call. */
+  reconcilerEntries: StatusReconcilerEntry[] = [];
+
+  constructor(opts: { image?: string; omitResults?: boolean } = {}) {
+    super({ image: opts.image });
+    this.omitResults = opts.omitResults ?? false;
+  }
+
+  private readonly omitResults: boolean;
+
+  static resultFor(context: string): string {
+    return `record-${context.replace(/[^a-z0-9-]/gi, '-')}`;
+  }
+
+  createPendingTask(contexts: string[], name = 'set-status-pending'): Task {
+    const base = super.createPendingTask(contexts, name);
+    if (this.omitResults) return base;
+    return new Task({
+      name,
+      params: this.requiredParams,
+      results: contexts.map(c => new Result({ name: RecordingStatusReporter.resultFor(c) })),
+      steps: base.steps,
+    });
+  }
+
+  pendingTaskResults(context: string): Record<string, string> {
+    return { 'record-id': RecordingStatusReporter.resultFor(context) };
+  }
+
+  createStatusReconcilerTask(entries: StatusReconcilerEntry[], name = 'reconcile-status'): Task {
+    this.reconcilerEntries = entries;
+    return super.createStatusReconcilerTask(entries, name);
   }
 }

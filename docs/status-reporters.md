@@ -26,14 +26,21 @@ interface StatusReporter {
   createPendingTask(contexts: string[], name?: string): Task;
   finalStep(context: string, userStepNames?: string[]): TaskStepSpec;
   startStep?(context: string): TaskStepSpec;
-  createStatusReconcilerTask?(entries: { taskName: string; context: string }[], name?: string): Task;
+  createStatusReconcilerTask?(entries: StatusReconcilerEntry[], name?: string): Task;
   /** @deprecated — implement createStatusReconcilerTask instead. */
-  createSkipResolverTask?(entries: { taskName: string; context: string }[], name?: string): Task;
+  createSkipResolverTask?(entries: StatusReconcilerEntry[], name?: string): Task;
+  pendingTaskResults?(context: string): Record<string, string>;
   pendingGroupKey?(): string;
+}
+
+interface StatusReconcilerEntry {
+  taskName: string;
+  context: string;
+  pendingTaskName?: string; // always set by core
 }
 ```
 
-Four of the seven members are optional, and which one a pipeline calls is feature-detected, so
+Five of the eight members are optional, and which one a pipeline calls is feature-detected, so
 the full method set is worth spelling out.
 
 ### `requiredParams`
@@ -92,6 +99,44 @@ means queued and the start step marks when the pod actually began.
 POST never fails the task. It runs outside the exit-code contract and is not one of the
 `userStepNames` handed to `finalStep`. Name it apart from `finalStep`'s step: synthesis
 fails if the two share a name.
+
+### `pendingTaskResults(context)`
+
+Optional. Hands each reporting task values its pending task produced — typically the ID of
+an external record the pending task created per context (a check run, say), which
+`startStep` and `finalStep` then update instead of creating a new one.
+
+Return a map of task param name to pending-task result name:
+
+```ts
+pendingTaskResults(context: string): Record<string, string> {
+  return { 'check-run-id': `check-run-id-${slug(context)}` };
+}
+```
+
+Core declares each param on the reporting task (type `string`; read it in a step as
+`$(params.check-run-id)`) and every pipeline binds it to
+`$(tasks.<pending task>.results.<result>)`, using whatever name it gave that pipeline's
+pending task. A task shared by two pipelines gets each pipeline's own pending task, and the
+reporter never needs the name. The params are not pipeline params, so they never reach the
+PipelineRun's interface.
+
+Rules, enforced at construction:
+
+- `createPendingTask` must declare every result named, as a `Result` on the task.
+  `Pipeline` throws otherwise.
+- A param name must not collide with one of the task's own params or `requiredParams`.
+  `Task` throws otherwise.
+
+One rule core cannot enforce: **write every result, even when the POST fails.** Tekton fails
+a pipeline task whose param references a result that was never written (and skips a
+`finally` task in the same position), so a pending step that gives up early takes the
+reporting task down with it. Write an empty string and have the later steps treat it as
+"no record".
+
+The reconciler gets the same values through `StatusReconcilerEntry.pendingTaskName`: bind
+`$(tasks.${entry.pendingTaskName}.results.<result>)` with `Param.pipelineExpression`, as
+for the task status below.
 
 ### `createStatusReconcilerTask(entries, name)`
 
