@@ -17,6 +17,15 @@ export interface StatusReconcilerEntry {
   pendingTaskName?: string;
 }
 
+/** Options for {@link StatusReporter.captureStepOutput}. */
+export interface StepOutputCapture {
+  /**
+   * Bytes of each step's output to keep: the tail, since that is where a failure
+   * usually is. Defaults to `DEFAULT_STEP_OUTPUT_MAX_BYTES` (64 KiB).
+   */
+  maxBytes?: number;
+}
+
 /**
  * Provider-agnostic interface for reporting pipeline task statuses to an external system.
  *
@@ -133,6 +142,20 @@ export interface StatusReporter {
    * Optional: a reporter that does not implement it gets a group per instance.
    */
   pendingGroupKey?(): string;
+
+  /**
+   * Opts the reporting tasks into keeping each user step's output for {@link finalStep}
+   * to read. The script wrapper tees the step's combined stdout and stderr to
+   * `stepOutputPath(stepName)` and trims it to the last `maxBytes`; the step's log is
+   * unchanged. Only `script` steps are wrapped, so a step defined by `command`/`args`
+   * leaves no file.
+   *
+   * The capture is the log as printed, secrets included if a step prints them. A
+   * reporter that posts it somewhere public must say so in its own documentation.
+   *
+   * Optional: without it, no output is captured and the steps run as before.
+   */
+  readonly captureStepOutput?: StepOutputCapture;
 
   /** Parameters required by this reporter (e.g., repo name, revision). */
   readonly requiredParams: Param[];

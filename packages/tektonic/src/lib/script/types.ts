@@ -33,6 +33,38 @@ export function stepExitCodePath(stepName: string): string {
 }
 
 /**
+ * Default cap on a captured step-output file, in bytes: the last 64 KiB of the
+ * step's combined stdout and stderr are kept. See {@link StepOutputCapture}.
+ */
+export const DEFAULT_STEP_OUTPUT_MAX_BYTES = 64 * 1024;
+
+/**
+ * Path at which a user step's captured output is left for a reporter to read,
+ * when the task's {@link StatusReporter} opts in through `captureStepOutput`.
+ *
+ * The file holds the tail of the step's combined stdout and stderr, at most the
+ * reporter's `maxBytes`. It lives under `/tekton/home`, which every step in the
+ * pod shares, at mode 0666 so a reporter running as another uid can read it. It
+ * is absent for a step that did not run, and for a step whose body terminated
+ * the interpreter before the wrapper could write it — read it as best-effort and
+ * keep {@link stepExitCodePath} as the authority on success.
+ *
+ * The output is the step's log as-is: anything a step prints, a secret included,
+ * ends up here. A reporter that posts it somewhere public must say so.
+ */
+export function stepOutputPath(stepName: string): string {
+  return `/tekton/home/.step-output-${stepName}`;
+}
+
+/** Where and how much of a step's output a capturing wrapper keeps. */
+export interface OutputCapture {
+  /** File the tail of the body's combined stdout and stderr is written to. */
+  path: string;
+  /** Bytes kept: the last `maxBytes` of the output. */
+  maxBytes: number;
+}
+
+/**
  * ` [task/step]` for a wrapper's failure line, or `''` when the context carries
  * neither name. Shared so every language plugin labels failures identically.
  */
@@ -88,6 +120,14 @@ export interface ScriptCtx {
    * capture wrapper (nushell) permits it instead of failing synthesis.
    */
   allowExit?: boolean;
+  /**
+   * When set, and {@link ScriptCtx.captureExitCode} is too, the wrapper also tees
+   * the body's combined stdout and stderr to {@link OutputCapture.path}, keeping
+   * the last {@link OutputCapture.maxBytes}. The output still reaches the step's
+   * log as before. Ignored when not capturing the exit code. A language that does
+   * not implement it leaves no file, which a reporter must tolerate anyway.
+   */
+  outputCapture?: OutputCapture;
 }
 
 /**

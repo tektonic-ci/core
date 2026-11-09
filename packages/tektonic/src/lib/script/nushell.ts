@@ -1,5 +1,8 @@
 import { scriptLabel, type ScriptLanguage, type ScriptCtx } from './types';
 
+/** Set on the child a capturing wrapper re-runs itself as; see {@link Nushell.captureOutput}. */
+const CAPTURED_ENV = 'TEKTONIC_OUTPUT_CAPTURED';
+
 /**
  * Nushell scripting language plugin.
  *
@@ -74,6 +77,7 @@ export class Nushell implements ScriptLanguage {
       'def main [] {',
       body,
       '}',
+      ...this.captureOutput(ctx),
       // Attribute the failure. nushell's message for a failed external command is the
       // generic "External command had a non-zero exit code", which on a report-only task
       // is the entire signal — see ScriptCtx.taskName. Task and step names are Kubernetes
@@ -85,6 +89,36 @@ export class Nushell implements ScriptLanguage {
       `$"($__tek_worst)" | save -f ${ctx.exitCodePath}`,
       'exit $__tek_rc',
     ].join('\n');
+  }
+
+  /**
+   * With {@link ScriptCtx.outputCapture}, the script re-runs itself as a child and
+   * tees the child's combined output to the log and the capture file.
+   *
+   * The body runs in this process, so its `print`s and its external commands write
+   * straight to the step's stdout — nothing in-process can intercept them. Running
+   * the same file again under `TEKTONIC_OUTPUT_CAPTURED` (which skips this block)
+   * puts all of it on one stream. `complete` is the only sink that keeps the child's
+   * exit code — through `print` or `save` it reads as 0 — and it holds the output
+   * in memory until the child exits; a body that exits non-zero on purpose still
+   * reports its own code, since it is the child's.
+   */
+  private captureOutput(ctx: ScriptCtx): string[] {
+    const cap = ctx.outputCapture;
+    if (!cap) return [];
+    const out = cap.path;
+    return [
+      `if ($env.${CAPTURED_ENV}? | is-empty) {`,
+      `  try { "" | save -f ${out} }`,
+      `  try { ^chmod 0666 ${out} }`,
+      `  let rc = (with-env {${CAPTURED_ENV}: "1"} { ^$nu.current-exe $env.CURRENT_FILE o+e>| tee { print -n -r } | tee { save -f ${out} } | complete | get exit_code })`,
+      `  try {`,
+      `    let b = (open --raw ${out} | into binary)`,
+      `    if ($b | bytes length) > ${cap.maxBytes} { $b | bytes at (-${cap.maxBytes}).. | save -f ${out} }`,
+      `  }`,
+      '  exit $rc',
+      '}',
+    ];
   }
 
   lintCommand(file: string): string[] {

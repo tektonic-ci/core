@@ -9,6 +9,17 @@ at the first change after 2.0.0; earlier history is in the git log.
 
 ## Unreleased
 
+### Added: optional `StatusReporter.captureStepOutput`, keeping each step's output tail for the reporter
+
+A report step could not read another step's output, so no reporter could say why a task
+failed. A reporter that sets `captureStepOutput` (`{ maxBytes? }`, default 64 KiB,
+`DEFAULT_STEP_OUTPUT_MAX_BYTES`) has each user step's script wrapper tee its combined stdout
+and stderr to `stepOutputPath(stepName)` under `/tekton/home`, trimmed to the last
+`maxBytes`. The step's log and exit code are unchanged. `ScriptCtx` gains an optional
+`outputCapture` that the built-in `sh`, `bash`, `nu` and `py` languages implement; a custom
+language may ignore it. The file is the log as printed, secrets included, so a reporter that
+posts it publicly must say so. Reporters without it are unchanged. (tektonic-u7b)
+
 ### Added: optional `StatusReporter.pendingTaskResults`, passing pending-task results to reporting tasks
 
 A reporter that implements `pendingTaskResults(context)` returns a map of task param name to

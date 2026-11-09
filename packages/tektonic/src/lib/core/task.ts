@@ -13,7 +13,7 @@ import type { WhenClause } from "./condition";
 import { PvcBackend } from "../cache/pvc-backend";
 import type { StatusReporter } from "./status-reporter";
 import type { CacheBackend, BackendCtx } from "./cache-backend";
-import { renderScript, EXIT_CODE_PATH } from "../script";
+import { renderScript, EXIT_CODE_PATH, stepOutputPath, DEFAULT_STEP_OUTPUT_MAX_BYTES } from "../script";
 import type { ScriptInput, LanguageName, ScriptCtx } from "../script";
 import { Action, ACTION_OUTPUT_DIR, ACTION_VOLUME_NAME } from "./action";
 import {
@@ -914,6 +914,16 @@ export class TaskDef<AN extends string = never> implements TaskLike {
             taskName: this.name,
         };
         const libCtx: ScriptCtx = { exitCodePath: EXIT_CODE_PATH, captureExitCode: false };
+        // A reporter that wants the user steps' output says so; each user step then tees
+        // its own output to a per-step file the reporter's final step can read.
+        const outputCapture = reporting ? this.statusReporter?.captureStepOutput : undefined;
+        const outputMaxBytes = outputCapture?.maxBytes ?? DEFAULT_STEP_OUTPUT_MAX_BYTES;
+        if (outputCapture && (!Number.isInteger(outputMaxBytes) || outputMaxBytes <= 0)) {
+            throw new Error(
+                `Task '${this.name}': status reporter captureStepOutput.maxBytes must be a ` +
+                    `positive integer, got ${outputMaxBytes}`,
+            );
+        }
 
         const renderStep = (
             s: TaskStepSpec,
@@ -931,7 +941,11 @@ export class TaskDef<AN extends string = never> implements TaskLike {
             if (script !== undefined) {
                 // stepName is per-step, so it is layered on here rather than baked
                 // into the shared ctx above.
-                out.script = renderScript(script, { ...renderCtx, stepName: s.name }, defaultLanguage);
+                const stepCtx: ScriptCtx = { ...renderCtx, stepName: s.name };
+                if (outputCapture && renderCtx.captureExitCode) {
+                    stepCtx.outputCapture = { path: stepOutputPath(s.name), maxBytes: outputMaxBytes };
+                }
+                out.script = renderScript(script, stepCtx, defaultLanguage);
             }
             const effectiveOnError = onError ?? (injectOnError ? "continue" : undefined);
             if (effectiveOnError) out.onError = effectiveOnError;
