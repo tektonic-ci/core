@@ -477,6 +477,16 @@ declare class Construct implements IConstruct {
 declare function dedent(text: string): string;
 ```
 
+## DEFAULT_AUX_STEP_RESOURCES
+
+```ts
+declare const DEFAULT_AUX_STEP_RESOURCES: {
+    readonly requests: {
+        readonly cpu: "10m";
+    };
+};
+```
+
 ## DEFAULT_BASE_IMAGE
 
 ```ts

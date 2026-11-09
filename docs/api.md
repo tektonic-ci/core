@@ -482,3 +482,4 @@ for. Third-party backends and reporters declare their own needs with
 | `DEFAULT_STEP_SECURITY_CONTEXT` | `{ allowPrivilegeEscalation: false, ... }` | Default step security context |
 | `RESTRICTED_STEP_SECURITY_CONTEXT` | `{ ..., runAsNonRoot: true }` | Stricter security context with `runAsNonRoot` |
 | `DEFAULT_STEP_RESOURCES` | `{ requests: { cpu: '100m', memory: '128Mi' }, limits: { cpu: '1', memory: '512Mi' } }` | Default step resource requests and limits |
+| `DEFAULT_AUX_STEP_RESOURCES` | `{ requests: { cpu: '10m' } }` | Set on injected cache restore/save and status-reporter steps that set no `computeResources` of their own; memory and limits still come from the step template |

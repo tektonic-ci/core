@@ -31,7 +31,10 @@ spec:
           - ALL
     workingDir: $(workspaces.workspace.path)
   steps:
-    - env: []
+    - computeResources:
+        requests:
+          cpu: 10m
+      env: []
       image: ghcr.io/pfenerty/apko-cicd/base:stable
       name: report-running
       onError: continue
@@ -59,7 +62,10 @@ spec:
 
         let body = ({ state: "pending", context: "anchore-scan", description: "Running" } | merge { target_url: "https://tekton-dashboard.bear-velociraptor.ts.net/#/namespaces/$(context.taskRun.namespace)/taskruns/$(context.taskRun.name)" })
         post-status "report-running [anchore-scan]" $body | ignore
-    - image: ghcr.io/pfenerty/apko-cicd/base:stable
+    - computeResources:
+        requests:
+          cpu: 10m
+      image: ghcr.io/pfenerty/apko-cicd/base:stable
       name: restore-grype-db-cache
       script: |-
         #!/usr/bin/env nu
@@ -222,7 +228,10 @@ spec:
         let __tek_worst = ([$__tek_prev $__tek_rc] | math max)
         $"($__tek_worst)" | save -f /tekton/home/.exit-code
         exit $__tek_rc
-    - image: ghcr.io/pfenerty/apko-cicd/base:stable
+    - computeResources:
+        requests:
+          cpu: 10m
+      image: ghcr.io/pfenerty/apko-cicd/base:stable
       name: save-grype-db-cache
       onError: continue
       script: |-
@@ -267,7 +276,10 @@ spec:
         let ratio = ($uncompressed / ($compressed | into int) | math round --precision 1)
         log $"save-grype-db-cache: saved ($compressed) ratio=($ratio)x in ($elapsed)s"
       workingDir: $(workspaces.workspace.path)
-    - env: []
+    - computeResources:
+        requests:
+          cpu: 10m
+      env: []
       image: ghcr.io/pfenerty/apko-cicd/base:stable
       name: report-status
       script: |-

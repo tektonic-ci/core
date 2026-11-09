@@ -73,6 +73,22 @@ export const DEFAULT_STEP_RESOURCES = {
 } as const;
 
 /**
+ * CPU request for the steps tektonic injects around the user's: cache restore and save,
+ * and a status reporter's start and final steps. Steps run one at a time, but the scheduler
+ * reserves the sum of every step's requests for the pod, so {@link DEFAULT_STEP_RESOURCES}'
+ * 100m on each of these over-reserved a few hundred millicores per task for steps that
+ * mostly wait on I/O.
+ *
+ * Only `requests.cpu` is set: Tekton merges a step's fields over `stepTemplate` key by key,
+ * so memory and limits still come from the task's step template. An injected step that
+ * sets `computeResources` itself (a cache's `computeResources`, or a reporter's step) keeps
+ * its own.
+ */
+export const DEFAULT_AUX_STEP_RESOURCES = {
+    requests: { cpu: "10m" },
+} as const;
+
+/**
  * Home directory every pod gets unless the project sets its own `HOME`.
  *
  * A pod-level `runAsUser` (tektonic sets one by default) usually has no `/etc/passwd` entry,
