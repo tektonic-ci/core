@@ -4,6 +4,7 @@ import {
     TEKTON_API_V1,
     DEFAULT_STEP_SECURITY_CONTEXT,
     DEFAULT_STEP_RESOURCES,
+    DEFAULT_AUX_STEP_RESOURCES,
 } from "../constants";
 import { Param } from "./param";
 import { Workspace } from "./workspace";
@@ -974,16 +975,21 @@ export class TaskDef<AN extends string = never> implements TaskLike {
             ? [{ name: ACTION_VOLUME_NAME, mountPath: ACTION_OUTPUT_DIR }]
             : [];
 
+        // Injected steps that only wait on I/O request less CPU than user steps, unless
+        // they set their own resources.
+        const aux = (s: TaskStepSpec): TaskStepSpec =>
+            s.computeResources ? s : { ...s, computeResources: DEFAULT_AUX_STEP_RESOURCES };
+
         const steps = [
             // onError is forced rather than defaulted: a failed start report never fails the task.
-            ...startStep.map((s) => renderStep({ ...s, onError: "continue" }, libCtx, false)),
-            ...restoreSteps.map((s) => renderStep(s, libCtx, false)),
+            ...startStep.map((s) => renderStep(aux({ ...s, onError: "continue" }), libCtx, false)),
+            ...restoreSteps.map((s) => renderStep(aux(s), libCtx, false)),
             ...fetchSteps.map((s) => renderStep(s, userCtx, reporting)),
             ...this.steps.map((s) => renderStep(s, userCtx, reporting)),
             ...publishSteps.map((s) => renderStep(s, userCtx, reporting)),
             ...provenanceStep.map((s) => renderStep(s, userCtx, reporting)),
-            ...saveSteps.map((s) => renderStep(s, libCtx, false)),
-            ...reporterStep.map((s) => renderStep(s, libCtx, false)),
+            ...saveSteps.map((s) => renderStep(aux(s), libCtx, false)),
+            ...reporterStep.map((s) => renderStep(aux(s), libCtx, false)),
         ];
         new ApiObject(scope, this.name, {
             apiVersion: TEKTON_API_V1,

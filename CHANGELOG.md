@@ -9,6 +9,16 @@ at the first change after 2.0.0; earlier history is in the git log.
 
 ## Unreleased
 
+### Changed: injected steps request 10m CPU instead of 100m
+
+Cache restore and save steps and a status reporter's start and final steps now set
+`computeResources: DEFAULT_AUX_STEP_RESOURCES` (`{ requests: { cpu: "10m" } }`, newly
+exported) unless they set their own. The scheduler reserves the sum of every step's
+requests for a task's pod although steps run one at a time, so these steps, which mostly
+wait on I/O, over-reserved about 100m each. Tekton merges a step over `stepTemplate` key by
+key, so their memory request and limits are unchanged. A cache's `computeResources` still
+wins. Re-synthesize to pick it up. (tektonic-83f)
+
 ### Added: optional `StatusReporter.captureStepOutput`, keeping each step's output tail for the reporter
 
 A report step could not read another step's output, so no reporter could say why a task
