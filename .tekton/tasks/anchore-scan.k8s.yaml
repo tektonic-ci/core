@@ -87,6 +87,7 @@ spec:
           try {
             ^zstd -d -T1 -c $archive | ^tar xf - -C $stage -o --no-same-permissions
           } catch { |e|
+            try { ^chmod -R u+w $stage } catch { }
             rm -rf $stage
             log $"restore-grype-db-cache: extract failed \(($e.msg)\)"
             rm -f $archive

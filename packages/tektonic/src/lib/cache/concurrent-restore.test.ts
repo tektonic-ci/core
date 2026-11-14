@@ -91,6 +91,29 @@ describe('compressed restore of an unextractable archive', () => {
     expect(catchBlock).toContain('exit 0');
     expect(catchBlock).not.toContain('exit 1');
   });
+
+  // A partial extraction can leave 0555 dirs behind, which nushell's rm -rf cannot remove.
+  it('makes a partial stage writable before removing it', () => {
+    const catchBlock = script().slice(script().indexOf('} catch { |e|'));
+    expect(catchBlock.indexOf('^chmod -R u+w $stage')).toBeGreaterThan(-1);
+    expect(catchBlock.indexOf('^chmod -R u+w $stage')).toBeLessThan(catchBlock.indexOf('rm -rf $stage'));
+  });
+
+  it('saves with tar flags busybox accepts', () => {
+    const app = new App();
+    const chart = new Chart(app, 'test');
+    const ws = source();
+    new Task({
+      name: 'go-test',
+      workspaces: [ws],
+      steps: [{ name: 's', image: 'go' }],
+      caches: [goCache(ws, store())],
+    }).synth(chart, 'ns', CAPABLE);
+    const save = (chart.toJson()[0] as AnyObj).spec.steps.find((s: AnyObj) => s.name.startsWith('save-')).script;
+    // No GNU-only flags: the default injected image ships busybox tar, which rejects --mode.
+    expect(save).toContain('^tar cf - ...$paths');
+    expect(save).not.toContain('--mode');
+  });
 });
 
 describe('shared-workspace cache detection', () => {

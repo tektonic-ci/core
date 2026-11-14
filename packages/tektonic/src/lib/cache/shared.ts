@@ -82,11 +82,15 @@ export function stagedExtract(
         .split("\n")
         .map((l) => (l.length > 0 ? `  ${l}` : l))
         .join("\n");
+    // A partial extraction can leave read-only directories (Go's 0555 module cache) in the
+    // stage, and nushell's `rm -rf` cannot descend into them, so the cleanup itself would
+    // fail the step. Make the stage writable first.
     return `let stage = $".cache-restore-(random uuid)"
 mkdir $stage
 try {
   ${extract}
 } catch { |e|
+  try { ^chmod -R u+w $stage } catch { }
   rm -rf $stage
   log $"${label}: extract failed \\(($e.msg)\\)"
 ${failure}
