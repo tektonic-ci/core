@@ -99,7 +99,7 @@ describe('compressed restore of an unextractable archive', () => {
     expect(catchBlock.indexOf('^chmod -R u+w $stage')).toBeLessThan(catchBlock.indexOf('rm -rf $stage'));
   });
 
-  it('saves archives with owner-writable modes', () => {
+  it('saves with tar flags busybox accepts', () => {
     const app = new App();
     const chart = new Chart(app, 'test');
     const ws = source();
@@ -110,7 +110,9 @@ describe('compressed restore of an unextractable archive', () => {
       caches: [goCache(ws, store())],
     }).synth(chart, 'ns', CAPABLE);
     const save = (chart.toJson()[0] as AnyObj).spec.steps.find((s: AnyObj) => s.name.startsWith('save-')).script;
-    expect(save).toContain('tar cf - --mode=u+w');
+    // No GNU-only flags: the default injected image ships busybox tar, which rejects --mode.
+    expect(save).toContain('^tar cf - ...$paths');
+    expect(save).not.toContain('--mode');
   });
 });
 

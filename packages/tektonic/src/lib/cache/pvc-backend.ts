@@ -185,11 +185,8 @@ let tmp = $"($archive).tmp.(random uuid)"
 # nushell aborts the enclosing block as soon as any external command in the pipe
 # reports a non-zero exit (e.g. tar failing to read one of $paths), so cleanup must
 # live in a catch — code placed after the pipe but outside try/catch never runs.
-# --mode=u+w stores every entry owner-writable. The chmod above runs before tar, so a
-# concurrent task can still add a read-only dir (Go's 0555 module cache) in between, and
-# extracting under such a dir fails with "Permission denied".
 try {
-  ^tar cf - --mode=u+w ...$paths | ^zstd -${compressionLevel} ${flag}${forceSave ? " -f" : ""} -o $tmp
+  ^tar cf - ...$paths | ^zstd -${compressionLevel} ${flag}${forceSave ? " -f" : ""} -o $tmp
 } catch { |e|
   rm -f $tmp
   log $"${label}: compress failed \(($e.msg)\), discarding partial archive"
