@@ -86,6 +86,7 @@ spec:
           try {
             ^zstd -d -T1 -c $archive | ^tar xf - -C $stage -o --no-same-permissions
           } catch { |e|
+            try { ^chmod -R u+w $stage } catch { }
             rm -rf $stage
             log $"restore-npm-cache: extract failed \(($e.msg)\)"
             rm -f $archive
@@ -239,8 +240,11 @@ spec:
         # nushell aborts the enclosing block as soon as any external command in the pipe
         # reports a non-zero exit (e.g. tar failing to read one of $paths), so cleanup must
         # live in a catch — code placed after the pipe but outside try/catch never runs.
+        # --mode=u+w stores every entry owner-writable. The chmod above runs before tar, so a
+        # concurrent task can still add a read-only dir (Go's 0555 module cache) in between, and
+        # extracting under such a dir fails with "Permission denied".
         try {
-          ^tar cf - ...$paths | ^zstd -1 -T1 -o $tmp
+          ^tar cf - --mode=u+w ...$paths | ^zstd -1 -T1 -o $tmp
         } catch { |e|
           rm -f $tmp
           log $"save-npm-cache: compress failed (($e.msg)), discarding partial archive"
