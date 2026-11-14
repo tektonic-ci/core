@@ -9,6 +9,8 @@ at the first change after 2.0.0; earlier history is in the git log.
 
 ## Unreleased
 
+## 2.5.0
+
 ### Changed: injected steps request 10m CPU instead of 100m
 
 Cache restore and save steps and a status reporter's start and final steps now set
@@ -50,6 +52,11 @@ the restore step on every run until someone deleted it from the volume. Restore 
 failure, deletes the archive and continues as a miss, so the next save writes a good one.
 `stagedExtract` gains an optional `onFailure` argument (nushell run after the staging dir is
 removed; default `exit 1`, so existing callers such as cache-gcs are unchanged). (tektonic-vvq)
+
+A failed extraction can leave read-only directories (Go's 0555 module cache) in the staging
+dir, and nushell's `rm -rf` cannot remove them, so the cleanup itself failed the step before
+`onFailure` ran. `stagedExtract` now makes the staging dir writable before removing it, which
+also covers cache-gcs. (tektonic-vvq)
 
 ## 2.4.0
 
