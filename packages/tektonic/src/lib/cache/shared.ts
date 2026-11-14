@@ -66,17 +66,33 @@ export function hashExpr(c: TaskCacheSpec): string {
  * @param c        the cache spec, for its `paths`
  * @param label    step label used in log lines
  * @param extract  the extraction pipeline; must write into `$stage` (i.e. `tar xf - -C $stage`)
+ * @param onFailure nushell run after a failed extraction has been cleaned up and logged.
+ *                 Defaults to `exit 1`, failing the step. A backend whose save never overwrites
+ *                 an existing archive should instead discard the archive and `exit 0`, treating
+ *                 it as a miss, or the bad archive fails every run until removed by hand.
  */
-export function stagedExtract(c: TaskCacheSpec, label: string, extract: string): string {
+export function stagedExtract(
+    c: TaskCacheSpec,
+    label: string,
+    extract: string,
+    onFailure = "exit 1",
+): string {
     const pathList = c.paths.map((p) => `"${p}"`).join(", ");
+    const failure = onFailure
+        .split("\n")
+        .map((l) => (l.length > 0 ? `  ${l}` : l))
+        .join("\n");
+    // A partial extraction can leave read-only directories (Go's 0555 module cache) in the
+    // stage, which `rm -rf` cannot descend into; make it writable first.
     return `let stage = $".cache-restore-(random uuid)"
 mkdir $stage
 try {
   ${extract}
 } catch { |e|
+  try { ^chmod -R u+w $stage } catch { }
   rm -rf $stage
   log $"${label}: extract failed \\(($e.msg)\\)"
-  exit 1
+${failure}
 }
 for p in [${pathList}] {
   let staged = ($stage | path join $p)
