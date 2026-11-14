@@ -9,6 +9,72 @@ function indent(body: string): string {
 }
 
 /**
+ * With {@link ScriptCtx.outputCapture}, points fds 1 and 2 at a pipe whose reader
+ * thread copies everything to the original stdout and to the capture file. Doing it
+ * at the descriptor level, not by swapping `sys.stdout`, catches the output of the
+ * subprocesses a body runs as well as its own. Any failure to set it up leaves the
+ * step running uncaptured.
+ */
+function captureStart(ctx: ScriptCtx): string[] {
+  const cap = ctx.outputCapture;
+  if (!cap) return [];
+  return [
+    '_tek_cap = None',
+    'try:',
+    '    import threading as _tek_th',
+    `    _tek_f = open("${cap.path}", "wb")`,
+    '    try:',
+    `        _tek_os.chmod("${cap.path}", 0o666)`,
+    '    except OSError:',
+    '        pass',
+    '    _tek_r, _tek_w = _tek_os.pipe()',
+    '    _tek_o1, _tek_o2 = _tek_os.dup(1), _tek_os.dup(2)',
+    '    def _tek_pump():',
+    '        while True:',
+    '            _b = _tek_os.read(_tek_r, 65536)',
+    '            if not _b:',
+    '                break',
+    '            _v = memoryview(_b)',
+    '            while _v:',
+    '                _v = _v[_tek_os.write(_tek_o1, _v):]',
+    '            _tek_f.write(_b)',
+    '    _tek_t = _tek_th.Thread(target=_tek_pump, daemon=True)',
+    '    _tek_t.start()',
+    '    sys.stdout.flush(); sys.stderr.flush()',
+    '    _tek_os.dup2(_tek_w, 1); _tek_os.dup2(_tek_w, 2); _tek_os.close(_tek_w)',
+    '    _tek_cap = (_tek_t, _tek_f, _tek_o1, _tek_o2)',
+    'except Exception:',
+    '    pass',
+  ];
+}
+
+/**
+ * Restores fds 1 and 2, drains the pipe and trims the capture file to its last
+ * `maxBytes`. The join is bounded: a background process the body left running
+ * still holds the pipe open, and must not hold the step with it.
+ */
+function captureEnd(ctx: ScriptCtx): string[] {
+  const cap = ctx.outputCapture;
+  if (!cap) return [];
+  return [
+    'if _tek_cap:',
+    '    try:',
+    '        sys.stdout.flush(); sys.stderr.flush()',
+    '    except Exception:',
+    '        pass',
+    '    _tek_os.dup2(_tek_cap[2], 1); _tek_os.dup2(_tek_cap[3], 2)',
+    '    _tek_cap[0].join(5)',
+    '    try:',
+    '        _tek_cap[1].close()',
+    `        with open("${cap.path}", "rb") as _f: _tek_b = _f.read()`,
+    `        if len(_tek_b) > ${cap.maxBytes}:`,
+    `            with open("${cap.path}", "wb") as _f: _f.write(_tek_b[-${cap.maxBytes}:])`,
+    '    except Exception:',
+    '        pass',
+  ];
+}
+
+/**
  * Python scripting language plugin.
  *
  * The preamble provides a `log` helper. When capturing, the body is placed
@@ -51,6 +117,7 @@ export class Python implements ScriptLanguage {
       '    pass',
       'def _tek_main():',
       mainBody,
+      ...captureStart(ctx),
       '_tek_rc = 0',
       'try:',
       '    _tek_main()',
@@ -58,6 +125,7 @@ export class Python implements ScriptLanguage {
       '    _tek_rc = _e.code if isinstance(_e.code, int) else (0 if _e.code is None else 1)',
       'except BaseException:',
       '    import traceback; traceback.print_exc(); _tek_rc = 1',
+      ...captureEnd(ctx),
       'try:',
       `    with open("${ctx.exitCodePath}") as _f: _tek_prev = int(_f.read().strip() or 0)`,
       'except Exception:',

@@ -7,7 +7,7 @@ import { Param } from './param';
 import { Result } from './result';
 import { Workspace } from './workspace';
 import { TRIGGER_EVENTS } from './trigger-events';
-import { TestStatusReporter } from '../../__fixtures__/reporter';
+import { RecordingStatusReporter, TestStatusReporter } from '../../__fixtures__/reporter';
 import { gated } from './pipeline-task';
 import { onBranch } from './condition';
 
@@ -435,5 +435,81 @@ describe('multiple status reporters', () => {
     const names = (spec.tasks as any[]).map(t => t.name);
     expect(names.filter((n: string) => n.startsWith('set-status-pending'))).toEqual(['set-status-pending-ci']);
     expect((spec.finally as any[]).map(t => t.name)).toEqual(['reconcile-status-ci']);
+  });
+});
+
+describe('pending-task results', () => {
+  const reportingTask = (name: string, reporter: TestStatusReporter, params: Param[] = []) =>
+    new Task({ name, statusReporter: reporter, params, steps: [{ name: 's', image: 'alpine' }] });
+  const specOf = (pipeline: Pipeline) => (pipelineManifest(pipeline, { namespace: 'ns' }) as any).spec;
+  const paramOf = (spec: any, task: string, param: string) =>
+    (spec.tasks as any[]).find(t => t.name === task).params.find((p: any) => p.name === param)?.value;
+
+  it("binds each task's param to its own result on the pipeline's pending task", () => {
+    const reporter = new RecordingStatusReporter();
+    const spec = specOf(
+      new Pipeline({ name: 'ci', tasks: [reportingTask('build', reporter), reportingTask('scan', reporter)] }),
+    );
+    expect(paramOf(spec, 'build', 'record-id')).toBe('$(tasks.set-status-pending-ci.results.record-build)');
+    expect(paramOf(spec, 'scan', 'record-id')).toBe('$(tasks.set-status-pending-ci.results.record-scan)');
+  });
+
+  it('resolves against each pipeline sharing the task', () => {
+    const reporter = new RecordingStatusReporter();
+    const build = reportingTask('build', reporter);
+    expect(paramOf(specOf(new Pipeline({ name: 'push', tasks: [build] })), 'build', 'record-id'))
+      .toBe('$(tasks.set-status-pending-push.results.record-build)');
+    expect(paramOf(specOf(new Pipeline({ name: 'pr', tasks: [build] })), 'build', 'record-id'))
+      .toBe('$(tasks.set-status-pending-pr.results.record-build)');
+  });
+
+  it("uses a second reporter group's own pending task", () => {
+    const spec = specOf(
+      new Pipeline({
+        name: 'ci',
+        tasks: [
+          reportingTask('build', new RecordingStatusReporter()),
+          reportingTask('scan', new RecordingStatusReporter({ image: 'other' })),
+        ],
+      }),
+    );
+    expect(paramOf(spec, 'scan', 'record-id')).toBe('$(tasks.set-status-pending-ci-2.results.record-scan)');
+  });
+
+  it('declares the param on the task and not on the pipeline', () => {
+    const build = reportingTask('build', new RecordingStatusReporter({ image: 'nu' }));
+    const spec = specOf(new Pipeline({ name: 'ci', tasks: [build] }));
+    expect((spec.params as any[]).map(p => p.name)).not.toContain('record-id');
+    const chart = new Chart(new App(), 't');
+    build.synth(chart, 'ns');
+    const taskParams = (chart.toJson()[0] as any).spec.params as any[];
+    expect(taskParams.find(p => p.name === 'record-id')).toEqual({ name: 'record-id', type: 'string' });
+  });
+
+  it('passes the pending task name to the reconciler', () => {
+    const reporter = new RecordingStatusReporter();
+    new Pipeline({ name: 'ci', tasks: [reportingTask('build', reporter)] });
+    expect(reporter.reconcilerEntries).toEqual([
+      { taskName: 'build', context: 'build', pendingTaskName: 'set-status-pending-ci' },
+    ]);
+  });
+
+  it('rejects a binding to a result the pending task does not declare', () => {
+    const reporter = new RecordingStatusReporter({ omitResults: true });
+    expect(() => new Pipeline({ name: 'ci', tasks: [reportingTask('build', reporter)] })).toThrow(
+      /binds param 'record-id' to result 'record-build' of pending task 'set-status-pending-ci'/,
+    );
+  });
+
+  it("rejects a binding that collides with the task's own param", () => {
+    expect(() =>
+      reportingTask('build', new RecordingStatusReporter(), [new Param({ name: 'record-id' })]),
+    ).toThrow(/already has a param of that name/);
+  });
+
+  it('leaves a reporter without pendingTaskResults unchanged', () => {
+    const spec = specOf(new Pipeline({ name: 'ci', tasks: [reportingTask('build', new TestStatusReporter())] }));
+    expect((spec.tasks as any[]).find(t => t.name === 'build').params.map((p: any) => p.name))
+      .toEqual(['repo-full-name', 'revision']);
   });
 });

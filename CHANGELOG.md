@@ -7,6 +7,50 @@ release from their own repos and log changes there:
 [cache-gcs](https://github.com/tektonic-ci/cache-gcs/blob/main/CHANGELOG.md). This file starts
 at the first change after 2.0.0; earlier history is in the git log.
 
+## Unreleased
+
+### Changed: injected steps request 10m CPU instead of 100m
+
+Cache restore and save steps and a status reporter's start and final steps now set
+`computeResources: DEFAULT_AUX_STEP_RESOURCES` (`{ requests: { cpu: "10m" } }`, newly
+exported) unless they set their own. The scheduler reserves the sum of every step's
+requests for a task's pod although steps run one at a time, so these steps, which mostly
+wait on I/O, over-reserved about 100m each. Tekton merges a step over `stepTemplate` key by
+key, so their memory request and limits are unchanged. A cache's `computeResources` still
+wins. Re-synthesize to pick it up. (tektonic-83f)
+
+### Added: optional `StatusReporter.captureStepOutput`, keeping each step's output tail for the reporter
+
+A report step could not read another step's output, so no reporter could say why a task
+failed. A reporter that sets `captureStepOutput` (`{ maxBytes? }`, default 64 KiB,
+`DEFAULT_STEP_OUTPUT_MAX_BYTES`) has each user step's script wrapper tee its combined stdout
+and stderr to `stepOutputPath(stepName)` under `/tekton/home`, trimmed to the last
+`maxBytes`. The step's log and exit code are unchanged. `ScriptCtx` gains an optional
+`outputCapture` that the built-in `sh`, `bash`, `nu` and `py` languages implement; a custom
+language may ignore it. The file is the log as printed, secrets included, so a reporter that
+posts it publicly must say so. Reporters without it are unchanged. (tektonic-u7b)
+
+### Added: optional `StatusReporter.pendingTaskResults`, passing pending-task results to reporting tasks
+
+A reporter that implements `pendingTaskResults(context)` returns a map of task param name to
+result name on its pending task. Core declares each param on the reporting task and every
+pipeline binds it to `$(tasks.<pending task>.results.<result>)` under the name that pipeline
+gave its pending task, so a check-runs reporter can create every run up front and hand each
+task its run's ID. `Pipeline` throws if the pending task does not declare a bound result, and
+`Task` if a bound param collides with one of its own. The reconciler's entries gain
+`pendingTaskName` for the same purpose, typed as the newly exported `StatusReconcilerEntry`.
+`assertStatusReporterConformance` checks the bindings when the hook is present. Reporters
+without it are unchanged. (tektonic-36a)
+
+### Fixed: an unextractable compressed PVC cache archive is a miss, not a failure on every run
+
+The save step skips a hash whose archive already exists, so a compressed PVC archive that
+restore could not extract (truncated, corrupt, or holding entries tar cannot recreate) failed
+the restore step on every run until someone deleted it from the volume. Restore now logs the
+failure, deletes the archive and continues as a miss, so the next save writes a good one.
+`stagedExtract` gains an optional `onFailure` argument (nushell run after the staging dir is
+removed; default `exit 1`, so existing callers such as cache-gcs are unchanged). (tektonic-vvq)
+
 ## 2.4.0
 
 ### Added: optional `StatusReporter.startStep`, reporting when a task actually starts

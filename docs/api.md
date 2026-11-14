@@ -311,6 +311,8 @@ Provider-agnostic interface for reporting pipeline task statuses to an external 
 | `createPendingTask(contexts: string[])` | Returns a `Task` that marks all given context strings as "pending" before any other task runs |
 | `finalStep(context: string, userStepNames?: string[])` | Returns a `TaskStepSpec` that reports success or failure for the given context, from the worst of `/tekton/home/.exit-code` and Tekton's own `/tekton/steps/step-<name>/exitCode` for each named user step. `Task` supplies the names; omitting them falls back to the contract file alone. |
 | `startStep?(context: string)` | Optional. Returns a `TaskStepSpec` that reports the context as running. `Task` prepends it as the first step, ahead of cache restore, and always renders it with `onError: 'continue'`; a reporter without it emits no start step. |
+| `pendingTaskResults?(context: string)` | Optional. Returns `{ [taskParam]: pendingTaskResult }`. Core declares each param on the reporting task and binds it to `$(tasks.<pending task>.results.<result>)` in every pipeline; the pending task must declare the results. The reconciler's entries carry `pendingTaskName` for the same purpose. See [status-reporters.md](status-reporters.md#pendingtaskresultscontext). |
+| `captureStepOutput?` | Optional `{ maxBytes?: number }`. Each user `script` step of a reporting task tees its combined output to `stepOutputPath(stepName)` (`/tekton/home/.step-output-<step>`), trimmed to the last `maxBytes` (default 64 KiB), for `finalStep` to read. The file is the log as printed, secrets included. See [status-reporters.md](status-reporters.md#capturestepoutput). |
 | `requiredParams` | `Param[]` — params this reporter needs (e.g. repo name, revision). Automatically merged into the `params` of any `Task` that uses this reporter. |
 
 ### `GitHubStatusReporter`
@@ -480,3 +482,4 @@ for. Third-party backends and reporters declare their own needs with
 | `DEFAULT_STEP_SECURITY_CONTEXT` | `{ allowPrivilegeEscalation: false, ... }` | Default step security context |
 | `RESTRICTED_STEP_SECURITY_CONTEXT` | `{ ..., runAsNonRoot: true }` | Stricter security context with `runAsNonRoot` |
 | `DEFAULT_STEP_RESOURCES` | `{ requests: { cpu: '100m', memory: '128Mi' }, limits: { cpu: '1', memory: '512Mi' } }` | Default step resource requests and limits |
+| `DEFAULT_AUX_STEP_RESOURCES` | `{ requests: { cpu: '10m' } }` | Set on injected cache restore/save and status-reporter steps that set no `computeResources` of their own; memory and limits still come from the step template |

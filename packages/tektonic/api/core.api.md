@@ -477,6 +477,16 @@ declare class Construct implements IConstruct {
 declare function dedent(text: string): string;
 ```
 
+## DEFAULT_AUX_STEP_RESOURCES
+
+```ts
+declare const DEFAULT_AUX_STEP_RESOURCES: {
+    readonly requests: {
+        readonly cpu: "10m";
+    };
+};
+```
+
 ## DEFAULT_BASE_IMAGE
 
 ```ts
@@ -513,6 +523,12 @@ declare const DEFAULT_POD_SECURITY_CONTEXT: {
         readonly type: "RuntimeDefault";
     };
 };
+```
+
+## DEFAULT_STEP_OUTPUT_MAX_BYTES
+
+```ts
+declare const DEFAULT_STEP_OUTPUT_MAX_BYTES: number;
 ```
 
 ## DEFAULT_STEP_RESOURCES
@@ -898,6 +914,15 @@ interface OnChangesOptions {
 declare const or: (...conditions: Condition[]) => Condition;
 ```
 
+## OutputCapture
+
+```ts
+interface OutputCapture {
+    path: string;
+    maxBytes: number;
+}
+```
+
 ## PAC_ANNOTATION_PREFIX
 
 ```ts
@@ -1265,6 +1290,7 @@ interface ScriptCtx {
     taskName?: string;
     stepName?: string;
     allowExit?: boolean;
+    outputCapture?: OutputCapture;
 }
 ```
 
@@ -1346,6 +1372,16 @@ declare class Sh implements ScriptLanguage {
 declare function stagedExtract(c: TaskCacheSpec, label: string, extract: string, onFailure?: string): string;
 ```
 
+## StatusReconcilerEntry
+
+```ts
+interface StatusReconcilerEntry {
+    taskName: string;
+    context: string;
+    pendingTaskName?: string;
+}
+```
+
 ## StatusReporter
 
 ```ts
@@ -1353,15 +1389,11 @@ interface StatusReporter {
     createPendingTask(contexts: string[], name?: string): Task;
     finalStep(context: string, userStepNames?: string[]): TaskStepSpec;
     startStep?(context: string): TaskStepSpec;
-    createStatusReconcilerTask?(entries: {
-        taskName: string;
-        context: string;
-    }[], name?: string): Task;
-    createSkipResolverTask?(entries: {
-        taskName: string;
-        context: string;
-    }[], name?: string): Task;
+    createStatusReconcilerTask?(entries: StatusReconcilerEntry[], name?: string): Task;
+    createSkipResolverTask?(entries: StatusReconcilerEntry[], name?: string): Task;
+    pendingTaskResults?(context: string): Record<string, string>;
     pendingGroupKey?(): string;
+    readonly captureStepOutput?: StepOutputCapture;
     readonly requiredParams: Param[];
 }
 ```
@@ -1370,6 +1402,20 @@ interface StatusReporter {
 
 ```ts
 declare function stepExitCodePath(stepName: string): string;
+```
+
+## StepOutputCapture
+
+```ts
+interface StepOutputCapture {
+    maxBytes?: number;
+}
+```
+
+## stepOutputPath
+
+```ts
+declare function stepOutputPath(stepName: string): string;
 ```
 
 ## SynthDefaults

@@ -26,14 +26,26 @@ interface StatusReporter {
   createPendingTask(contexts: string[], name?: string): Task;
   finalStep(context: string, userStepNames?: string[]): TaskStepSpec;
   startStep?(context: string): TaskStepSpec;
-  createStatusReconcilerTask?(entries: { taskName: string; context: string }[], name?: string): Task;
+  createStatusReconcilerTask?(entries: StatusReconcilerEntry[], name?: string): Task;
   /** @deprecated — implement createStatusReconcilerTask instead. */
-  createSkipResolverTask?(entries: { taskName: string; context: string }[], name?: string): Task;
+  createSkipResolverTask?(entries: StatusReconcilerEntry[], name?: string): Task;
+  pendingTaskResults?(context: string): Record<string, string>;
   pendingGroupKey?(): string;
+  readonly captureStepOutput?: StepOutputCapture;
+}
+
+interface StepOutputCapture {
+  maxBytes?: number; // default DEFAULT_STEP_OUTPUT_MAX_BYTES, 64 KiB
+}
+
+interface StatusReconcilerEntry {
+  taskName: string;
+  context: string;
+  pendingTaskName?: string; // always set by core
 }
 ```
 
-Four of the seven members are optional, and which one a pipeline calls is feature-detected, so
+Six of the nine members are optional, and which one a pipeline calls is feature-detected, so
 the full method set is worth spelling out.
 
 ### `requiredParams`
@@ -76,6 +88,9 @@ Read the outcome from two places, because neither alone is complete:
 Injected cache restore/save steps are deliberately **not** in `userStepNames`: they carry
 `onError: 'continue'` of their own, and a failed cache save must not fail the task.
 
+To say *why* a step failed, opt into [`captureStepOutput`](#capturestepoutput) and read
+`stepOutputPath(stepName)` for the tail of its log.
+
 Whether the step re-exits that code — turning a red status into a failed `TaskRun` — is the
 reporter's choice. The GitHub reporter does by default and takes `failOnError: false` to opt
 out.
@@ -92,6 +107,44 @@ means queued and the start step marks when the pod actually began.
 POST never fails the task. It runs outside the exit-code contract and is not one of the
 `userStepNames` handed to `finalStep`. Name it apart from `finalStep`'s step: synthesis
 fails if the two share a name.
+
+### `pendingTaskResults(context)`
+
+Optional. Hands each reporting task values its pending task produced — typically the ID of
+an external record the pending task created per context (a check run, say), which
+`startStep` and `finalStep` then update instead of creating a new one.
+
+Return a map of task param name to pending-task result name:
+
+```ts
+pendingTaskResults(context: string): Record<string, string> {
+  return { 'check-run-id': `check-run-id-${slug(context)}` };
+}
+```
+
+Core declares each param on the reporting task (type `string`; read it in a step as
+`$(params.check-run-id)`) and every pipeline binds it to
+`$(tasks.<pending task>.results.<result>)`, using whatever name it gave that pipeline's
+pending task. A task shared by two pipelines gets each pipeline's own pending task, and the
+reporter never needs the name. The params are not pipeline params, so they never reach the
+PipelineRun's interface.
+
+Rules, enforced at construction:
+
+- `createPendingTask` must declare every result named, as a `Result` on the task.
+  `Pipeline` throws otherwise.
+- A param name must not collide with one of the task's own params or `requiredParams`.
+  `Task` throws otherwise.
+
+One rule core cannot enforce: **write every result, even when the POST fails.** Tekton fails
+a pipeline task whose param references a result that was never written (and skips a
+`finally` task in the same position), so a pending step that gives up early takes the
+reporting task down with it. Write an empty string and have the later steps treat it as
+"no record".
+
+The reconciler gets the same values through `StatusReconcilerEntry.pendingTaskName`: bind
+`$(tasks.${entry.pendingTaskName}.results.<result>)` with `Param.pipelineExpression`, as
+for the task status below.
 
 ### `createStatusReconcilerTask(entries, name)`
 
@@ -134,6 +187,28 @@ step (as the GitHub reporter does), try every entry and exit non-zero once at th
 `Pipeline` prefers `createStatusReconcilerTask` and falls back to it, so an older reporter
 keeps working; implement the newer one. Implement neither and pipelines simply skip
 reconciliation.
+
+### `captureStepOutput`
+
+Optional. Set it (`{}` for the default cap, or `{ maxBytes }`) and each user step of a
+reporting task also tees its combined stdout and stderr to `stepOutputPath(stepName)`
+(`/tekton/home/.step-output-<step>`), trimmed to the last `maxBytes` when the step ends. The
+step's log is unchanged. `finalStep` can then put the failing step's tail in its report.
+
+What to expect from the file:
+
+- It exists only for `script` steps in a language that implements the capture — `sh`, `bash`,
+  `nu` and `py` do. A `command`/`args` step, or a step that never ran, leaves none. Read it as
+  best-effort and keep `stepExitCodePath` as the authority on the outcome.
+- `sh`/`bash` fall back to running uncaptured on an image without `tee`. A nushell step re-runs
+  its script as a child to see the output of `print` and external commands on one stream, and
+  holds that output in memory until the child exits.
+- It is mode 0666, so a reporter step running as another uid can read it.
+- It is the log as printed. Anything a step prints, secrets included, is in it: a reporter that
+  posts it somewhere public must say so in its own documentation.
+
+The opt-in is the reporter's, not the task's: it costs disk under `/tekton/home` and, for
+nushell, memory, so a reporter that does not read the files should not set it.
 
 ### `pendingGroupKey()`
 

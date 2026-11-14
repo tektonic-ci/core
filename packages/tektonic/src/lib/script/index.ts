@@ -6,7 +6,8 @@ import { scriptLabel, EXIT_CODE_PATH } from './types';
 import type { ScriptLanguage, ScriptCtx } from './types';
 
 export type { ScriptLanguage, ScriptCtx } from './types';
-export { EXIT_CODE_PATH, stepExitCodePath } from './types';
+export { EXIT_CODE_PATH, stepExitCodePath, stepOutputPath, DEFAULT_STEP_OUTPUT_MAX_BYTES } from './types';
+export type { OutputCapture } from './types';
 export { embedSh } from './embed';
 export type { EmbedShOptions } from './embed';
 export { Sh } from './sh';

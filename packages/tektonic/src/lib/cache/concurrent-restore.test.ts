@@ -3,7 +3,6 @@ import { App, Chart } from 'cdk8s';
 import { Task } from '../core/task';
 import { Workspace } from '../core/workspace';
 import { Pipeline } from '../core/pipeline';
-import { stagedExtract } from './shared';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyObj = Record<string, any>;
@@ -69,49 +68,49 @@ describe('cache restore on a shared workspace', () => {
 
 });
 
-describe('compressed PVC restore of an unextractable archive', () => {
-  const task = () => {
-    const ws = source();
-    return new Task({
-      name: 'go-test',
-      workspaces: [ws],
-      steps: [{ name: 's', image: 'go' }],
-      caches: [goCache(ws, store())],
-    });
-  };
+describe('compressed restore of an unextractable archive', () => {
+  // Save skips a hash whose archive already exists, so an archive that cannot be extracted
+  // (truncated, corrupt, or holding read-only dirs tar cannot recreate) used to fail every
+  // run until someone deleted it by hand. Restore now drops it and carries on as a miss.
+  const script = () =>
+    restoreScript(
+      new Task({
+        name: 'go-test',
+        workspaces: [source()],
+        steps: [{ name: 's', image: 'go' }],
+        caches: [goCache(source(), store())],
+      }),
+    );
 
-  // Save skips a hash whose archive exists, so failing the restore would fail every later
-  // run on that hash until someone deleted the archive by hand (ocidex-zhji).
-  it('discards the archive and continues as a miss instead of failing', () => {
-    const script = restoreScript(task());
-    const onFailure = script.slice(script.indexOf('extract failed'));
-    expect(onFailure).toContain('rm -f $archive');
-    expect(onFailure).toContain('exit 0');
-    expect(onFailure).not.toMatch(/exit 1\n/);
+  it('deletes the archive and continues as a miss instead of failing the step', () => {
+    const s = script();
+    const catchBlock = s.slice(s.indexOf('} catch { |e|'), s.indexOf('for p in ['));
+    expect(catchBlock).toContain('rm -rf $stage');
+    expect(catchBlock).toContain('rm -f $archive');
+    expect(catchBlock).toContain('treating as a miss');
+    expect(catchBlock).toContain('exit 0');
+    expect(catchBlock).not.toContain('exit 1');
   });
 
+  // A partial extraction can leave 0555 dirs behind, which nushell's rm -rf cannot remove.
   it('makes a partial stage writable before removing it', () => {
-    const script = restoreScript(task());
-    expect(script.indexOf('^chmod -R u+w $stage')).toBeGreaterThan(-1);
-    expect(script.indexOf('^chmod -R u+w $stage')).toBeLessThan(script.indexOf('rm -rf $stage'));
+    const catchBlock = script().slice(script().indexOf('} catch { |e|'));
+    expect(catchBlock.indexOf('^chmod -R u+w $stage')).toBeGreaterThan(-1);
+    expect(catchBlock.indexOf('^chmod -R u+w $stage')).toBeLessThan(catchBlock.indexOf('rm -rf $stage'));
   });
 
   it('saves archives with owner-writable modes', () => {
     const app = new App();
     const chart = new Chart(app, 'test');
-    task().synth(chart, 'ns', CAPABLE);
+    const ws = source();
+    new Task({
+      name: 'go-test',
+      workspaces: [ws],
+      steps: [{ name: 's', image: 'go' }],
+      caches: [goCache(ws, store())],
+    }).synth(chart, 'ns', CAPABLE);
     const save = (chart.toJson()[0] as AnyObj).spec.steps.find((s: AnyObj) => s.name.startsWith('save-')).script;
     expect(save).toContain('tar cf - --mode=u+w');
-  });
-
-  it('keeps the shared helper failing by default for other backends', () => {
-    const script = stagedExtract(
-      { name: 'x', key: [], paths: ['p'] } as never,
-      'restore-x-cache',
-      '^tar xf - -C $stage',
-    );
-    expect(script).toContain('  exit 1\n}');
-    expect(script).not.toContain('rm -f $archive');
   });
 });
 

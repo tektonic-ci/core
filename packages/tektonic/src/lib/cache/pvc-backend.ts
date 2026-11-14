@@ -71,15 +71,14 @@ export class PvcBackend implements CacheBackend {
             const expr = hashExpr(c);
             const pathList = c.paths.map((p) => `"${p}"`).join(", ");
             // Indented to sit inside the `if ($archive | path exists)` block.
-            // Save skips a hash whose archive already exists, so an archive that cannot be
-            // extracted (truncated, or holding read-only dirs) would fail every run until
-            // someone deleted it. Discard it and carry on as a miss; this run's save replaces it.
             const stagedExtractBody = stagedExtract(
                 c,
                 label,
                 `^zstd -d ${flag} -c $archive | ^tar xf - -C $stage -o --no-same-permissions`,
+                // Save skips a hash whose archive exists, so an unextractable one would fail
+                // every run until removed by hand. Drop it and carry on as a miss instead.
                 `rm -f $archive
-log $"${label}: discarded unextractable archive, continuing as a miss ($hash)"
+log $"${label}: removed unextractable archive, treating as a miss ($hash)"
 exit 0`,
             )
                 .split("\n")

@@ -66,10 +66,10 @@ export function hashExpr(c: TaskCacheSpec): string {
  * @param c        the cache spec, for its `paths`
  * @param label    step label used in log lines
  * @param extract  the extraction pipeline; must write into `$stage` (i.e. `tar xf - -C $stage`)
- * @param onFailure nushell run after a failed extraction has been cleaned up and logged.
- *                 Defaults to `exit 1`, failing the step. A backend whose save never overwrites
- *                 an existing archive should instead discard the archive and `exit 0`, treating
- *                 it as a miss, or the bad archive fails every run until removed by hand.
+ * @param onFailure nushell run when extraction fails, after the staging dir is removed and the
+ *                  failure logged. Defaults to `exit 1`. A backend whose save step never replaces
+ *                  an existing archive should drop the archive here and `exit 0`, so a bad one
+ *                  becomes a miss the next save heals rather than a failure on every run.
  */
 export function stagedExtract(
     c: TaskCacheSpec,
@@ -83,7 +83,8 @@ export function stagedExtract(
         .map((l) => (l.length > 0 ? `  ${l}` : l))
         .join("\n");
     // A partial extraction can leave read-only directories (Go's 0555 module cache) in the
-    // stage, which `rm -rf` cannot descend into; make it writable first.
+    // stage, and nushell's `rm -rf` cannot descend into them, so the cleanup itself would
+    // fail the step. Make the stage writable first.
     return `let stage = $".cache-restore-(random uuid)"
 mkdir $stage
 try {

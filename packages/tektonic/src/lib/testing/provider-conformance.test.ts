@@ -4,7 +4,7 @@ import {
   assertCacheBackendConformance,
   assertArtifactStoreConformance,
 } from './provider-conformance';
-import { StartingStatusReporter, TestStatusReporter } from '../../__fixtures__/reporter';
+import { RecordingStatusReporter, StartingStatusReporter, TestStatusReporter } from '../../__fixtures__/reporter';
 import { PvcBackend } from '../cache/pvc-backend';
 import { WorkspaceArtifactStore } from '../core/artifact';
 import type { TaskArtifact } from '../core/artifact';
@@ -29,6 +29,28 @@ describe('assertStatusReporterConformance', () => {
   it('passes a reporter with a start step', () => {
     const r = assertStatusReporterConformance(() => new StartingStatusReporter(), withNushell);
     expect(r.checks).toContain('start step runs first and never fails the task');
+  });
+
+  it('passes a reporter that hands its tasks pending-task results', () => {
+    const r = assertStatusReporterConformance(() => new RecordingStatusReporter(), withNushell);
+    expect(r.checks).toContain('pendingTaskResults binds every task to results its pending task declares');
+  });
+
+  it('fails a reporter whose pending task does not declare the results it binds', () => {
+    expect(() =>
+      assertStatusReporterConformance(() => new RecordingStatusReporter({ omitResults: true }), withNushell),
+    ).toThrow(/does not declare it/);
+  });
+
+  it('fails a pending-task result bound under a required param name', () => {
+    class Colliding extends RecordingStatusReporter {
+      override pendingTaskResults(context: string): Record<string, string> {
+        return { revision: RecordingStatusReporter.resultFor(context) };
+      }
+    }
+    expect(() => assertStatusReporterConformance(() => new Colliding(), withNushell)).toThrow(
+      /already has a param of that name/,
+    );
   });
 
   it('fails a start step that takes a common step name', () => {

@@ -102,6 +102,8 @@ const userStep = (name: string): TaskStepSpec => ({ name, image: 'docker.io/libr
  * - `requiredParams` reach every reporting task.
  * - A reconciler, if implemented, is named as asked, lands in `finally`, and reads
  *   `$(tasks.<name>.status)` for every reporting task.
+ * - `pendingTaskResults`, if implemented, binds each reporting task to results the pending
+ *   task declares, under params apart from `requiredParams`.
  * - `pendingGroupKey`, if implemented, is stable, and two reporters built alike share one
  *   pending task.
  * - The whole pipeline synthesizes, twice, to the same output.
@@ -234,6 +236,26 @@ export function assertStatusReporterConformance(
     fail(kind, 'reporting task does not run after the pending task', `build runAfter: ${view.runAfter('build').join(', ') || '(none)'}`);
   }
   checks.push('one pending task, ahead of every reporting task');
+
+  // Pending-task results, if the reporter hands any to its tasks. Core already threw above
+  // if the pending task does not declare them, or if a binding reuses a task param's name;
+  // what is left is that each binding reaches its task.
+  if (reporter.pendingTaskResults) {
+    for (const [name, context] of [['build', 'conformance/build'], ['test', 'conformance/test']]) {
+      const bindings = reporter.pendingTaskResults(context);
+      for (const [param, result] of Object.entries(bindings)) {
+        const expected = `$(tasks.${pendingName}.results.${result})`;
+        const actual = view.task(name).params[param];
+        if (actual !== expected) {
+          fail(kind, 'a pending-task result does not reach its task', `${name}.${param}: expected ${expected}, got ${actual}`);
+        }
+      }
+      if (!sameJson(bindings, reporter.pendingTaskResults(context))) {
+        fail(kind, 'pendingTaskResults is not deterministic', 'two calls with the same argument differ');
+      }
+    }
+    checks.push('pendingTaskResults binds every task to results its pending task declares');
+  }
 
   for (const name of ['build', 'test']) {
     const t = tasks[name];

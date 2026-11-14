@@ -6,10 +6,10 @@ import { Param } from './param';
 import { Workspace } from './workspace';
 import { Result } from './result';
 import { HubTaskRef } from './hub-task-ref';
-import { RESTRICTED_STEP_SECURITY_CONTEXT, DEFAULT_STEP_RESOURCES } from '../constants';
+import { RESTRICTED_STEP_SECURITY_CONTEXT, DEFAULT_STEP_RESOURCES, DEFAULT_AUX_STEP_RESOURCES } from '../constants';
 import { DEFAULT_INJECTED_STEP_IMAGE } from './injected-image';
 import { StartingStatusReporter, TestStatusReporter } from '../../__fixtures__/reporter';
-import { nu, sh, EXIT_CODE_PATH } from '../script';
+import { nu, sh, EXIT_CODE_PATH, stepOutputPath } from '../script';
 import { onBranch } from './condition';
 
 /**
@@ -122,6 +122,27 @@ describe('Task', () => {
       t.synth(chart, 'ns', CAPABLE);
       const manifest = chart.toJson()[0];
       expect(manifest.spec.steps[0].computeResources).toEqual({ limits: { cpu: '4', memory: '4Gi' } });
+    });
+
+    it('gives injected cache, start and report steps the aux cpu request, not user steps', () => {
+      const app = new App();
+      const chart = new Chart(app, 'test');
+      const cacheWs = new Workspace({ name: 'npm-cache' });
+      const t = new Task({
+        name: 'aux',
+        statusReporter: new StartingStatusReporter(),
+        steps: [{ name: 'run', image: 'alpine' }],
+        caches: [{ name: 'npm', key: ['package-lock.json'], paths: ['node_modules'], workspace: cacheWs }],
+      });
+      t.synth(chart, 'ns', CAPABLE);
+      const steps = chart.toJson()[0].spec.steps;
+      const byName = Object.fromEntries(steps.map((s: any) => [s.name, s]));
+      expect(byName['run'].computeResources).toBeUndefined();
+      const aux = steps.filter((s: any) => s.name !== 'run');
+      expect(aux).toHaveLength(4);
+      for (const s of aux) {
+        expect(s.computeResources, s.name).toEqual(DEFAULT_AUX_STEP_RESOURCES);
+      }
     });
 
     it('passes an optional secretKeyRef through on step and sidecar env', () => {
@@ -643,7 +664,7 @@ describe('Task', () => {
         expect(save.computeResources).toEqual(resources);
       });
 
-      it('omits computeResources when not specified', () => {
+      it('falls back to the aux step default when not specified', () => {
         const app = new App();
         const chart = new Chart(app, 'test');
         const t = new Task({
@@ -653,7 +674,7 @@ describe('Task', () => {
         });
         t.synth(chart, 'ns', CAPABLE);
         const restore = chart.toJson()[0].spec.steps.find((s: any) => s.name === 'restore-npm-cache');
-        expect(restore.computeResources).toBeUndefined();
+        expect(restore.computeResources).toEqual(DEFAULT_AUX_STEP_RESOURCES);
       });
     });
 
@@ -1253,6 +1274,45 @@ describe('Task', () => {
       expect(user.script).toContain(`save -f ${EXIT_CODE_PATH}`);
       const report = steps.find((s) => s.name === 'report-status')!;
       expect(report.script).toContain(EXIT_CODE_PATH);
+    });
+
+    describe('step output capture', () => {
+      const task = (captureStepOutput?: { maxBytes?: number }) =>
+        new Task({
+          name: 'build',
+          statusReporter: new TestStatusReporter({ captureStepOutput }),
+          steps: [
+            { name: 'compile', image: 'alpine', script: sh`make` },
+            { name: 'raw', image: 'alpine', command: ['make'] },
+          ],
+        });
+
+      it('is off unless the reporter opts in', () => {
+        const steps = synthSteps(task());
+        expect(steps.find((s) => s.name === 'compile')!.script).not.toContain('.step-output-');
+      });
+
+      it("tees each user step's output to its own path, capped at the default", () => {
+        const steps = synthSteps(task({}));
+        const compile = steps.find((s) => s.name === 'compile')!.script;
+        expect(compile).toContain(`tee ${stepOutputPath('compile')}`);
+        expect(compile).toContain('tail -c 65536');
+        expect(stepOutputPath('compile')).toBe('/tekton/home/.step-output-compile');
+        // Neither the reporter's own step nor a command step is wrapped.
+        expect(steps.find((s) => s.name === 'report-status')!.script).not.toContain('.step-output-');
+        expect(steps.find((s) => s.name === 'raw')!.script).toBeUndefined();
+      });
+
+      it("honours the reporter's maxBytes", () => {
+        const compile = synthSteps(task({ maxBytes: 1024 })).find((s) => s.name === 'compile')!;
+        expect(compile.script).toContain('tail -c 1024');
+      });
+
+      it.each([0, -1, 1.5])('rejects maxBytes %s, naming the task', (maxBytes) => {
+        expect(() => synthSteps(task({ maxBytes }))).toThrow(
+          /Task 'build': status reporter captureStepOutput.maxBytes must be a positive integer/,
+        );
+      });
     });
 
     it("rejects a user step that takes the reporter's step name, naming task and step", () => {

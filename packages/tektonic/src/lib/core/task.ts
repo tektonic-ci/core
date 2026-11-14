@@ -4,6 +4,7 @@ import {
     TEKTON_API_V1,
     DEFAULT_STEP_SECURITY_CONTEXT,
     DEFAULT_STEP_RESOURCES,
+    DEFAULT_AUX_STEP_RESOURCES,
 } from "../constants";
 import { Param } from "./param";
 import { Workspace } from "./workspace";
@@ -13,7 +14,7 @@ import type { WhenClause } from "./condition";
 import { PvcBackend } from "../cache/pvc-backend";
 import type { StatusReporter } from "./status-reporter";
 import type { CacheBackend, BackendCtx } from "./cache-backend";
-import { renderScript, EXIT_CODE_PATH } from "../script";
+import { renderScript, EXIT_CODE_PATH, stepOutputPath, DEFAULT_STEP_OUTPUT_MAX_BYTES } from "../script";
 import type { ScriptInput, LanguageName, ScriptCtx } from "../script";
 import { Action, ACTION_OUTPUT_DIR, ACTION_VOLUME_NAME } from "./action";
 import {
@@ -505,6 +506,17 @@ export interface TaskOptions<AN extends string = never> {
     catalog?: CatalogMetadata;
 }
 
+const pendingResultBindingsByTask = new WeakMap<object, ReadonlyMap<string, string>>();
+
+/**
+ * @internal Params of a reporting task bound to its pending task's results, param name to
+ * result name, from {@link StatusReporter.pendingTaskResults}. Resolved by `Pipeline`, which
+ * names the pending task. Kept off {@link TaskDef} so the public type does not change.
+ */
+export function pendingResultBindings(task: object): ReadonlyMap<string, string> {
+    return pendingResultBindingsByTask.get(task) ?? new Map();
+}
+
 /**
  * A Tekton Task definition.
  *
@@ -614,6 +626,29 @@ export class TaskDef<AN extends string = never> implements TaskLike {
         const seen = new Map<string, Param>();
         for (const p of [...base, ...actionParams, ...reporterParams]) {
             if (!seen.has(p.name)) seen.set(p.name, p);
+        }
+        // Params bound to the pending task's results. The pipeline that holds this task
+        // names its pending task, so the expression is resolved there; the placeholder
+        // only keeps the param out of pipeline-level inference.
+        const pendingResults = opts.statusReporter?.pendingTaskResults?.(opts.statusContext ?? opts.name) ?? {};
+        const bindings = new Map<string, string>();
+        pendingResultBindingsByTask.set(this, bindings);
+        for (const [paramName, resultName] of Object.entries(pendingResults)) {
+            if (seen.has(paramName)) {
+                throw new Error(
+                    `Task '${this.name}': status reporter binds param '${paramName}' to pending-task ` +
+                        `result '${resultName}', but the task already has a param of that name`,
+                );
+            }
+            seen.set(
+                paramName,
+                new Param({
+                    name: paramName,
+                    type: "string",
+                    pipelineExpression: `$(tasks.<pending>.results.${resultName})`,
+                }),
+            );
+            bindings.set(paramName, resultName);
         }
         this.params = [...seen.values()];
         this.workspaces = mergeByName([
@@ -880,6 +915,16 @@ export class TaskDef<AN extends string = never> implements TaskLike {
             taskName: this.name,
         };
         const libCtx: ScriptCtx = { exitCodePath: EXIT_CODE_PATH, captureExitCode: false };
+        // A reporter that wants the user steps' output says so; each user step then tees
+        // its own output to a per-step file the reporter's final step can read.
+        const outputCapture = reporting ? this.statusReporter?.captureStepOutput : undefined;
+        const outputMaxBytes = outputCapture?.maxBytes ?? DEFAULT_STEP_OUTPUT_MAX_BYTES;
+        if (outputCapture && (!Number.isInteger(outputMaxBytes) || outputMaxBytes <= 0)) {
+            throw new Error(
+                `Task '${this.name}': status reporter captureStepOutput.maxBytes must be a ` +
+                    `positive integer, got ${outputMaxBytes}`,
+            );
+        }
 
         const renderStep = (
             s: TaskStepSpec,
@@ -897,7 +942,11 @@ export class TaskDef<AN extends string = never> implements TaskLike {
             if (script !== undefined) {
                 // stepName is per-step, so it is layered on here rather than baked
                 // into the shared ctx above.
-                out.script = renderScript(script, { ...renderCtx, stepName: s.name }, defaultLanguage);
+                const stepCtx: ScriptCtx = { ...renderCtx, stepName: s.name };
+                if (outputCapture && renderCtx.captureExitCode) {
+                    stepCtx.outputCapture = { path: stepOutputPath(s.name), maxBytes: outputMaxBytes };
+                }
+                out.script = renderScript(script, stepCtx, defaultLanguage);
             }
             const effectiveOnError = onError ?? (injectOnError ? "continue" : undefined);
             if (effectiveOnError) out.onError = effectiveOnError;
@@ -926,16 +975,21 @@ export class TaskDef<AN extends string = never> implements TaskLike {
             ? [{ name: ACTION_VOLUME_NAME, mountPath: ACTION_OUTPUT_DIR }]
             : [];
 
+        // Injected steps that only wait on I/O request less CPU than user steps, unless
+        // they set their own resources.
+        const aux = (s: TaskStepSpec): TaskStepSpec =>
+            s.computeResources ? s : { ...s, computeResources: DEFAULT_AUX_STEP_RESOURCES };
+
         const steps = [
             // onError is forced rather than defaulted: a failed start report never fails the task.
-            ...startStep.map((s) => renderStep({ ...s, onError: "continue" }, libCtx, false)),
-            ...restoreSteps.map((s) => renderStep(s, libCtx, false)),
+            ...startStep.map((s) => renderStep(aux({ ...s, onError: "continue" }), libCtx, false)),
+            ...restoreSteps.map((s) => renderStep(aux(s), libCtx, false)),
             ...fetchSteps.map((s) => renderStep(s, userCtx, reporting)),
             ...this.steps.map((s) => renderStep(s, userCtx, reporting)),
             ...publishSteps.map((s) => renderStep(s, userCtx, reporting)),
             ...provenanceStep.map((s) => renderStep(s, userCtx, reporting)),
-            ...saveSteps.map((s) => renderStep(s, libCtx, false)),
-            ...reporterStep.map((s) => renderStep(s, libCtx, false)),
+            ...saveSteps.map((s) => renderStep(aux(s), libCtx, false)),
+            ...reporterStep.map((s) => renderStep(aux(s), libCtx, false)),
         ];
         new ApiObject(scope, this.name, {
             apiVersion: TEKTON_API_V1,

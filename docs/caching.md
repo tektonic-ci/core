@@ -85,7 +85,7 @@ All fields live on `TaskCacheSpec` (the entries in a task's `caches` array):
 | `maxEntries` | `3` | Archives kept per workspace; `0` disables eviction |
 | `forceSave` | `false` | Always overwrite the archive (for tool-managed DBs, e.g. grype) |
 | `saveStrategy` | `'step'` | `'finally'` runs save in a separate pod — see below |
-| `computeResources` | stepTemplate default | CPU/memory for the injected cache steps |
+| `computeResources` | `DEFAULT_AUX_STEP_RESOURCES` (10m CPU request, rest from stepTemplate) | CPU/memory for the injected cache steps |
 
 ### One producer, many consumers
 

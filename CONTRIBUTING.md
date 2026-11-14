@@ -254,9 +254,15 @@ that changes what synthesis emits, and before every major.
 A staged version's dist-tag is fixed when it is staged, so a prerelease tagged wrongly has to be
 rejected and staged again under the next `N`, not retagged.
 
-A **major** release of core has an ordering constraint: the provider repos declare a peer range
-on core's major, and this repo's own self-CI installs `@tektonic-ci/reporter-github`. Publish a
-core prerelease, release the providers with a widened peer range, then release core
+Self-CI installs `@tektonic-ci/reporter-github`, whose peer range on core (`^2`) can't match a
+prerelease or a new major: npm never matches `X.Y.Z-next.N` against a range without that same
+`X.Y.Z` prerelease tuple, however wide. The `overrides` entry in the root `package.json` points
+that peer at the workspace package, so `npm ci` resolves whatever version the workspace carries.
+Don't remove it.
+
+A **major** release of core still has an ordering constraint for users: the provider repos
+declare a peer range on core's major. Publish a core prerelease, release the providers with a
+widened peer range, then release core
 ([ADR 0002](docs/adr/0002-npm-scope-and-versioning.md)).
 
 ### One-time setup

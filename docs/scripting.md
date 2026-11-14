@@ -414,6 +414,8 @@ consumer repo's script files.
 | `dedent(text)` | Strip common leading indentation (used internally by the tags) |
 | `renderScript(input, ctx, defaultLanguage?)` | Resolve a `ScriptInput` to its final string (synth-time) |
 | `EXIT_CODE_PATH` | The canonical contract path, `/tekton/home/.exit-code` |
+| `stepOutputPath(step)` | Where a step's captured output tail lands when its reporter sets `captureStepOutput` |
+| `DEFAULT_STEP_OUTPUT_MAX_BYTES` | Default cap on that file, 64 KiB |
 | `ScriptInput` / `ScriptObject` / `LanguageName` / `KnownLanguageName` / `ScriptTag` / `ScriptLanguage` / `ScriptCtx` | Types |
 | `assertExitCodeContract` / `interpreterAvailable` (`/testing`) | Conformance harness for a language |
 
