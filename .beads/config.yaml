@@ -27,9 +27,11 @@
 # Multi-repo configuration (experimental - bd-307)
 # Allows hydrating from multiple repositories and routing writes to the correct JSONL
 repos:
-  primary: "."
-  # additional: removed — unimplemented multi-repo hydration corrupts read
-  # consistency (see homelab-pn2). Cross-repo planning lives in ~/code/common.
+    primary: "."
+    # additional: removed — unimplemented multi-repo hydration corrupts read
+    # consistency (see homelab-pn2). Cross-repo planning lives in ~/code/common.
+export:
+    auto: true
 
 # Integration settings (access with 'bd config get/set')
 # These are stored in the database, not in this file:
