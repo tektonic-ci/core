@@ -118,6 +118,10 @@ Work is NOT complete until pushed. Before ending a session:
    git status  # must show "up to date with origin"
    ```
 
+## Releases: fetch first
+
+Always `git fetch` before judging local `main` in sync, and before giving any release or publish steps. In Sep 2026 local `main` was about 40 commits stale, and a manual `npm publish` shipped that stale tree as 2.0.0, a version npm never lets you reuse. After any manual publish, check `npm view @tektonic-ci/core gitHead` against the commit you meant to ship.
+
 ## CI and Automation
 
 This repo is `tektonic-ci/core`, and it publishes `@tektonic-ci/core` alone. The provider
