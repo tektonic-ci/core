@@ -15,8 +15,8 @@ import { GitHubStatusReporter, tektonDashboardUrl } from "@tektonic-ci/reporter-
 
 // ─── Images ──────────────────────────────────────────────────────────────────
 const nodeImage = "ghcr.io/pfenerty/apko-cicd/nodejs:24";
-const syftImage = "ghcr.io/pfenerty/apko-cicd/syft:1.51.0";
-const grypeImage = "ghcr.io/pfenerty/apko-cicd/grype:0.117.0";
+const syftImage = "ghcr.io/pfenerty/apko-cicd/syft:1.57.1";
+const grypeImage = "ghcr.io/pfenerty/apko-cicd/grype:0.121.3";
 
 // ─── Params ──────────────────────────────────────────────────────────────────
 // The PAC-injected params are typed handles rather than hand-declared Params plus raw
