@@ -20,3 +20,6 @@ repomix-output.xml
 
 # scripts/api-compat.mjs work dir (baseline download, generated compat file)
 .api-compat/
+
+# bd runtime lock
+.beads.gate.lock

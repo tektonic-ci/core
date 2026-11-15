@@ -80,3 +80,8 @@ proxied_server_client_info.json
 
 # Added by bd (missing required patterns)
 dolt-server-config.yaml
+
+# Beads syncs through refs/dolt/data (plan-5qe); the snapshot lives on branch beads/snapshot
+issues.jsonl
+# bd's auto-import bookkeeping
+.auto-import-issues.jsonl

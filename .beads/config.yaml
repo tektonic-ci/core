@@ -31,7 +31,9 @@ repos:
     # additional: removed — unimplemented multi-repo hydration corrupts read
     # consistency (see homelab-pn2). Cross-repo planning lives in ~/code/common.
 export:
-    auto: true
+    auto: false
+sync:
+    remote: "git+ssh://git@github.com/tektonic-ci/core.git"
 
 # Integration settings (access with 'bd config get/set')
 # These are stored in the database, not in this file:
@@ -41,3 +43,4 @@ export:
 # - linear.api-key
 # - github.org
 # - github.repo
+issue-prefix: "tektonic"
